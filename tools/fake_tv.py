@@ -78,6 +78,7 @@ async def main(host):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)
     try:
         asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"))
     except KeyboardInterrupt:
