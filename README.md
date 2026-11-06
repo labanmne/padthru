@@ -68,7 +68,7 @@ The picture never leaves the cable. Only the controller travels over the network
 
 Padthru now sits in the tray next to the clock. Its menu shows the PC's address and whether the TV is connected.
 
-> Windows SmartScreen may warn about a new, unsigned app. Click **More info → Run anyway**, or build it yourself (see [Building from source](#building-from-source)).
+> Release files are built by [GitHub Actions](.github/workflows/release.yml) straight from the tagged source. Windows SmartScreen may still warn about a new, unsigned app: click **More info → Run anyway**, or build it yourself (see [Building from source](#building-from-source)).
 
 ### 2. On the TV
 
