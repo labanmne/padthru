@@ -10,7 +10,7 @@
 set -euo pipefail
 
 REPO="labanmne/padthru"
-DOWNLOAD="https://github.com/$REPO/releases/latest/download"
+DOWNLOAD="${PADTHRU_DOWNLOAD:-https://github.com/$REPO/releases/latest/download}"  # override for mirrors and testing
 PORT=47811
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/padthru"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/padthru"
@@ -133,7 +133,7 @@ do_install() {
     fetch "$DOWNLOAD/padthru-linux.pyz" "$tmp/padthru-linux.pyz"
     fetch "$DOWNLOAD/SHA256SUMS.txt" "$tmp/SHA256SUMS.txt"
     if have sha256sum; then
-      (cd "$tmp" && grep ' padthru-linux.pyz$' SHA256SUMS.txt | sha256sum -c --quiet -) ||
+      (cd "$tmp" && tr -d '\r' < SHA256SUMS.txt | grep ' padthru-linux.pyz$' | sha256sum -c --quiet -) ||
         die "The download doesn't match its published checksum. Please try again."
     else
       warn "sha256sum not found; skipping the checksum check."

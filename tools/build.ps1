@@ -45,8 +45,10 @@ if ($LASTEXITCODE -ne 0) { throw 'build_pyz.py failed' }
 Copy-Item (Join-Path $root 'linux\install.sh') (Join-Path $dist 'install-linux.sh') -Force
 
 Write-Host '==> Checksums'
-Get-ChildItem $dist -File -Include *.wgt, *.exe, *.pyz, *.sh -Recurse | ForEach-Object {
+# Unix line endings, so `sha256sum -c` and the Linux installer can read it
+$sums = Get-ChildItem $dist -File -Include *.wgt, *.exe, *.pyz, *.sh -Recurse | ForEach-Object {
   '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
-} | Set-Content -Encoding ascii (Join-Path $dist 'SHA256SUMS.txt')
+}
+[IO.File]::WriteAllText((Join-Path $dist 'SHA256SUMS.txt'), (($sums -join "`n") + "`n"))
 Get-Content (Join-Path $dist 'SHA256SUMS.txt')
 Write-Host "Done: $dist"

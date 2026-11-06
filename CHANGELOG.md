@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-06
+
+### Fixed
+- **Linux installer:** the download check failed, because the release's `SHA256SUMS.txt` was written with Windows line endings. The release build now writes Unix line endings, and the installer accepts both.
+
 ## [0.2.0] - 2026-11-06
 
 ### Added
@@ -26,5 +31,6 @@ First public release.
 - **Share + Options as Guide.** Together they act as the Xbox Guide button, because the TV keeps the PS button for itself.
 - **Rumble forwarding** from games to the TV (experimental).
 
+[0.2.1]: https://github.com/labanmne/padthru/releases/tag/v0.2.1
 [0.2.0]: https://github.com/labanmne/padthru/releases/tag/v0.2.0
 [0.1.0]: https://github.com/labanmne/padthru/releases/tag/v0.1.0

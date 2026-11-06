@@ -24,7 +24,10 @@ These files are built by GitHub Actions straight from this tag's source.
 
 The [installation guide](https://github.com/labanmne/padthru#installation) has the details, and [docs/linux.md](https://github.com/labanmne/padthru/blob/main/docs/linux.md) covers Linux.
 
-### What's new in 0.2.0
+### 0.2.1
+Fixes the Linux installer: its download check failed on 0.2.0 because `SHA256SUMS.txt` had Windows line endings. If you tried 0.2.0 on Linux, just run the installer again.
+
+### New in 0.2.0
 - **Linux PC app.** It creates a virtual Xbox 360 controller through the kernel's `uinput`, so Steam, Proton and SDL games see a wired Xbox 360 controller. Rumble from games reaches the TV. It's pure Python with no dependencies.
 - **Linux installer** with a systemd user service, Steam's udev rule (only if needed), firewall handling, and `--uninstall`.
 - **`tools/fake_tv.py`** for testing the PC side without a TV.

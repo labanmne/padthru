@@ -24,7 +24,7 @@ import time
 import webbrowser
 
 APP = "Padthru"
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 PORT = 47811
 REPO_URL = "https://github.com/labanmne/padthru"
 STALE_AFTER = 0.6  # seconds without a packet from the TV -> release all inputs
