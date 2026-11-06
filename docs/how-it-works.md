@@ -8,7 +8,9 @@ A small Tizen web app.
 
 1. **Picture.** On start it asks the TV for its HDMI inputs (`tizen.systeminfo`, property `VIDEOSOURCE`) and shows the chosen one full screen with the TV Window API (`tizen.tvwindow.setSource` + `show`, public `tv.window` privilege). The page itself is transparent, so the HDMI picture is drawn behind it. Because the TV is still showing an HDMI source, Game Mode, HDR and the full resolution and refresh rate stay in effect.
 2. **Controllers.** It reads the controllers paired to the TV with the standard [Gamepad API](https://developer.mozilla.org/docs/Web/API/Gamepad_API) every 4 ms. It sends the state when something changes, and at least every 100 ms as a keep-alive.
-3. **Finding the PC.** It first tries the last PC it connected to. Failing that, it opens a WebSocket to every address on the TV's own `/24` subnet, 32 at a time, on port **47811**, and keeps the first one that answers the Padthru handshake. You can also type the address under **Green → Settings**.
+3. **Finding the PC.** It first tries the last PC it connected to. Failing that, it asks the TV for its own address and sends a small HTTP request (`GET /padthru`) to every address on that `/24` subnet, 32 at a time, on port **47811**. Only the PC that answers gets the WebSocket connection. A full search takes about 10 seconds. You can also type the address under **Green → Settings**.
+
+   *Why HTTP and not WebSockets for the search?* The TV's browser deliberately slows down new WebSocket attempts after many failed ones (a defense against port scanning). A WebSocket-based search therefore often walked right past the PC.
 
 The TV's PS / Home button is handled by the TV itself and never reaches apps.
 
@@ -25,6 +27,8 @@ A Python tray app, shipped as a single `Padthru.exe` built with PyInstaller.
 ## Protocol
 
 JSON text messages over a WebSocket.
+
+Discovery: `GET http://<pc>:47811/padthru` returns `{"padthru": 1, "v": "0.1.0", "name": "MY-PC"}`.
 
 | Direction | Message | Meaning |
 |---|---|---|

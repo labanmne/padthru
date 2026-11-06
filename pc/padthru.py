@@ -285,13 +285,26 @@ class Bridge:
                 if p.active and now - p.last > STALE_AFTER:
                     p.release()
 
+    async def discovery(self, path, request_headers):
+        """Plain HTTP GET /padthru answers the TV's network search.
+
+        The TV searches with ordinary HTTP requests because its browser deliberately
+        slows down WebSocket attempts after many failures (port-scan protection).
+        """
+        if path.split("?")[0] == "/padthru" and "upgrade" not in request_headers.get("Connection", "").lower():
+            body = json.dumps({"padthru": 1, "v": VERSION, "name": socket.gethostname()}).encode()
+            return (200, [("Content-Type", "application/json"), ("Access-Control-Allow-Origin", "*"),
+                          ("Cache-Control", "no-store")], body)
+        return None
+
     async def main(self, started):
         import websockets
         self.loop = asyncio.get_running_loop()
         self.stop_event = asyncio.Event()
         try:
             server = await websockets.serve(self.handler, "0.0.0.0", self.port, ping_interval=5,
-                                            ping_timeout=5, max_size=65536, compression=None)
+                                            ping_timeout=5, max_size=65536, compression=None,
+                                            process_request=self.discovery)
         except OSError as e:
             started["error"] = e
             started["event"].set()

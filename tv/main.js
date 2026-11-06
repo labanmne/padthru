@@ -15,7 +15,7 @@
   var PORT = 47811;
   var POLL_MS = 4;             // how often controllers are read
   var KEEPALIVE_MS = 100;      // unchanged state is resent this often (the PC releases input after 600 ms of silence)
-  var PROBE_TIMEOUT_MS = 1200; // per address while searching the network
+  var PROBE_TIMEOUT_MS = 1500; // per address while searching the network
   var SCAN_PARALLEL = 32;
 
   var store = {
@@ -129,6 +129,24 @@
     ws.onclose = function () { finish(false); };
   }
 
+  // Searching uses plain HTTP: the TV's browser deliberately slows down new WebSocket
+  // attempts after many failures, which would make the search miss the PC.
+  function ping(addr, timeout, done) {
+    var x = new XMLHttpRequest(), finished = false;
+    var finish = function (ok) { if (!finished) { finished = true; done(ok, addr); } };
+    try {
+      x.open('GET', 'http://' + addr + ':' + PORT + '/padthru', true);
+      x.timeout = timeout;
+      x.onload = function () {
+        var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
+        finish(!!(j && j.padthru));
+      };
+      x.onerror = x.ontimeout = x.onabort = function () { finish(false); };
+      x.send();
+      setTimeout(function () { if (!finished) { try { x.abort(); } catch (e) {} finish(false); } }, timeout + 200);
+    } catch (e) { finish(false); }
+  }
+
   function adopt(ws, addr) {
     link = ws; host = addr; store.set('host', addr);
     failures = 0; scanning = false; connecting = false;
@@ -162,16 +180,39 @@
     });
   }
 
+  var tvAddress = '';
+  function isIp(ip) { return /^\d+\.\d+\.\d+\.\d+$/.test(ip || '') && ip !== '0.0.0.0'; }
   function myAddress() {
-    try { var ip = webapis.network.getIp(); if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return ip; } catch (e) {}
-    return '';
+    if (isIp(tvAddress)) return tvAddress;
+    try { var ip = webapis.network.getIp(); if (isIp(ip)) tvAddress = ip; } catch (e) {}
+    return tvAddress;
+  }
+  // The TV's address, asked of every API that might know it.
+  function findMyAddress(cb) {
+    if (myAddress()) { cb(tvAddress); return; }
+    var props = ['ETHERNET_NETWORK', 'WIFI_NETWORK'], i = 0;
+    var tryNext = function () {
+      if (i >= props.length) { cb(''); return; }
+      var prop = props[i++];
+      try {
+        tizen.systeminfo.getPropertyValue(prop, function (n) {
+          if (n && isIp(n.ipAddress)) { tvAddress = n.ipAddress; cb(tvAddress); } else tryNext();
+        }, function () { tryNext(); });
+      } catch (e) { tryNext(); }
+    };
+    tryNext();
   }
 
   // Tries every address on the TV's own /24 network, SCAN_PARALLEL at a time.
   function scan() {
     if (scanning || link) return;
     scanning = true; failures = 0;
-    var mine = myAddress();
+    text('pc', 'Looking for your PC…', 'bad'); showHud(0);
+    findMyAddress(function (mine) { runScan(mine); });
+  }
+
+  function runScan(mine) {
+    log('searching for the PC, TV address ' + (mine || 'unknown'));
     var prefixes = mine ? [mine.replace(/\.\d+$/, '')] : ['192.168.1', '192.168.0', '10.0.0', '192.168.2'];
     var queue = [];
     if (host) queue.push(host);
@@ -179,18 +220,24 @@
       for (var i = 1; i < 255; i++) { var a = p + '.' + i; if (a !== mine && a !== host) queue.push(a); }
     });
     var total = queue.length, tried = 0, active = 0, found = false;
-    text('pc', 'Looking for your PC…', 'bad'); showHud(0);
     var next = function () {
       while (!found && active < SCAN_PARALLEL && queue.length) {
         active++;
-        probe(queue.shift(), PROBE_TIMEOUT_MS, function (ws, addr) {
+        ping(queue.shift(), PROBE_TIMEOUT_MS, function (ok, addr) {
           active--; tried++;
-          if (ws) {
-            if (found) { try { ws.close(); } catch (e) {} return; }
-            found = true; adopt(ws, addr); return;
-          }
           if (found) return;
-          if (tried % 16 === 0) text('pc', 'Looking for your PC… ' + Math.round(tried * 100 / total) + '%', 'bad');
+          if (ok) {
+            found = true;
+            log('found the PC at ' + addr + ' after ' + tried + ' addresses');
+            probe(addr, 3000, function (ws) {
+              if (ws) { adopt(ws, addr); return; }
+              // it answered the search but the controller link failed; remember it and keep trying it
+              scanning = false; host = addr; store.set('host', addr);
+              setTimeout(connect, 1000);
+            });
+            return;
+          }
+          if (tried % 8 === 0) text('pc', 'Looking for your PC… ' + Math.round(tried * 100 / total) + '%', 'bad');
           if (queue.length) next();
           else if (active === 0) {
             scanning = false;
