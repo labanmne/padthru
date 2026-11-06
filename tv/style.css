@@ -1,0 +1,42 @@
+html, body {
+  margin: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: transparent; /* the HDMI picture is drawn behind the page */
+  font-family: "SamsungOne", "Tizen Sans", sans-serif;
+}
+
+.card {
+  position: absolute;
+  top: 48px;
+  left: 48px;
+  min-width: 620px;
+  max-width: 900px;
+  padding: 24px 30px 20px;
+  border-radius: 18px;
+  background: rgba(14, 17, 22, 0.82);
+  color: #e7ecf2;
+  font-size: 26px;
+  line-height: 1.5;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  transition: opacity 0.35s ease;
+}
+
+.card.hidden { opacity: 0; pointer-events: none; }
+
+#settings { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 760px; }
+
+.title { font-size: 32px; font-weight: bold; margin-bottom: 10px; letter-spacing: 0.02em; }
+.row { display: flex; gap: 22px; }
+.k { width: 180px; color: #93a1b0; flex: none; }
+.v { flex: 1; }
+.ok { color: #74e09a; }
+.bad { color: #ff9b8f; }
+.hint { color: #93a1b0; font-size: 21px; margin: 0 0 12px 202px; }
+.keys { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.12); color: #93a1b0; font-size: 21px; }
+.keys b { color: #e7ecf2; }
+.red { color: #ff6b6b !important; }
+.green { color: #5fd38a !important; }
+.yellow { color: #f5d250 !important; }
+#set-host b { background: rgba(255, 255, 255, 0.14); padding: 0 8px; border-radius: 6px; }

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lag test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: monospace; overflow: hidden; }
+  #t { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 22vw; font-weight: bold; letter-spacing: -0.02em; }
+  #bar { position: absolute; left: 0; bottom: 6vh; height: 6vh; width: 3vw; background: #4cf; }
+  #hint { position: absolute; top: 2vh; left: 2vw; font-size: 2.2vw; color: #9ab; }
+</style>
+</head>
+<body>
+<div id="hint">Mirror this screen to the TV, then photograph laptop + TV together</div>
+<div id="t">0.000</div>
+<div id="bar"></div>
+<script>
+  var t = document.getElementById('t'), bar = document.getElementById('bar');
+  var start = performance.now();
+  function frame(now) {
+    var ms = Math.floor(now - start) % 100000;
+    t.textContent = (ms / 1000).toFixed(3);
+    bar.style.left = ((ms % 1000) / 1000 * 97) + 'vw';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  document.addEventListener('click', function () {
+    var el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Padthru</title>
+<script src="$WEBAPIS/webapis/webapis.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="hud" class="card">
+  <div class="title">Padthru</div>
+  <div class="row"><span class="k">PC</span><span id="pc" class="v bad">Starting…</span></div>
+  <div class="row"><span class="k">Picture</span><span id="src" class="v">–</span></div>
+  <div class="row"><span class="k">Controller</span><span id="pad" class="v bad">Press a button on your controller</span></div>
+  <div class="keys"><b class="red">Red</b> hide &nbsp; <b class="green">Green</b> settings &nbsp; <b>1–4</b> HDMI input &nbsp; <b>Back</b> exit</div>
+</div>
+
+<div id="settings" class="card hidden">
+  <div class="title">Settings</div>
+  <div class="row"><span class="k">PC address</span><span class="v" id="set-host">–</span></div>
+  <div class="hint">Type the last part with the number keys, or press <b class="yellow">Yellow</b> to search automatically.</div>
+  <div class="row"><span class="k">HDMI input</span><span class="v" id="set-hdmi">–</span></div>
+  <div class="hint">Change with ◀ ▶.</div>
+  <div class="keys"><b>OK</b> save &nbsp; <b>Back</b> cancel</div>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>

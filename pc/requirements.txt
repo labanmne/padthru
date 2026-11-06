@@ -1,0 +1,4 @@
+# Padthru PC app (Windows). vgamepad is vendored in pc/vendor (see THIRD_PARTY_NOTICES.md).
+websockets>=12,<16
+pystray>=0.19
+Pillow>=10

@@ -1,0 +1,45 @@
+<#
+.SYNOPSIS
+  Builds the Padthru release files into .\dist:
+    Padthru.wgt   unsigned Samsung TV app (Apps2Samsung or Tizen Studio signs it for your TV)
+    Padthru.exe   Windows tray app (one file)
+    SHA256SUMS.txt
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File tools\build.ps1
+#>
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+$dist = Join-Path $root 'dist'
+New-Item -ItemType Directory -Force $dist | Out-Null
+
+Write-Host '==> TV app (Padthru.wgt)'
+$wgt = Join-Path $dist 'Padthru.wgt'
+if (Test-Path $wgt) { Remove-Item $wgt }
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::Open($wgt, 'Create')
+foreach ($f in 'config.xml', 'index.html', 'main.js', 'style.css', 'icon.png') {
+  [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, (Join-Path $root "tv\$f"), $f) | Out-Null
+}
+$zip.Dispose()
+
+Write-Host '==> PC app (Padthru.exe)'
+python -m pip install --quiet -r (Join-Path $root 'pc\requirements.txt') pyinstaller
+$pc = Join-Path $root 'pc'
+$work = Join-Path $root 'build'
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name Padthru `
+  --icon (Join-Path $pc 'assets\padthru.ico') `
+  --paths (Join-Path $pc 'vendor') `
+  --hidden-import pystray._win32 `
+  --add-data "$(Join-Path $pc 'assets\padthru.png');assets" `
+  --add-data "$(Join-Path $pc 'vendor\vgamepad\win\vigem\client\x64\ViGEmClient.dll');vgamepad\win\vigem\client\x64" `
+  --distpath $dist --workpath $work --specpath $work `
+  (Join-Path $pc 'padthru.py')
+if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
+
+Write-Host '==> Checksums'
+Get-ChildItem $dist -File -Include *.wgt, *.exe -Recurse | ForEach-Object {
+  '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+} | Set-Content -Encoding ascii (Join-Path $dist 'SHA256SUMS.txt')
+Get-Content (Join-Path $dist 'SHA256SUMS.txt')
+Write-Host "Done: $dist"
