@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/PC-Windows%2010%20%7C%2011-0078D6.svg" alt="Windows 10 and 11">
+  <img src="https://img.shields.io/badge/PC-Windows%20%7C%20Linux-0078D6.svg" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/TV-Samsung%20Tizen-1428A0.svg" alt="Samsung Tizen TVs">
   <a href="https://github.com/labanmne/padthru/releases/latest"><img src="https://img.shields.io/github/v/release/labanmne/padthru?label=release" alt="Latest release"></a>
 </p>
@@ -30,7 +30,7 @@ Your Samsung TV already talks to your controller. **Padthru** is a small TV app 
 
 ```mermaid
 flowchart LR
-    PC["🖥️ Windows PC<br/>Padthru (tray app)"] -- "HDMI cable / extender<br/>native picture" --> TV["📺 Samsung TV<br/>Padthru (TV app)"]
+    PC["🖥️ Windows or Linux PC<br/>Padthru (PC app)"] -- "HDMI cable / extender<br/>native picture" --> TV["📺 Samsung TV<br/>Padthru (TV app)"]
     Pad["🎮 Controller"] -- "Bluetooth" --> TV
     TV -- "controller state<br/>home network" --> PC
     PC --> X["Virtual Xbox 360 controller"] --> G["Your games"]
@@ -44,7 +44,7 @@ The picture never leaves the cable. Only the controller travels over the network
 - **Zero setup on the network.** The TV app finds the PC by itself. You can also set the address by hand.
 - **Works with any game.** Games see a standard Xbox 360 controller (XInput), so anything that supports an Xbox controller, including Steam Input, just works. Rumble is passed back to the TV where it supports it (experimental).
 - **Up to four controllers** paired to the TV at once (tested with one so far).
-- **Tiny and quiet.** The PC side is a tray app that can start with Windows and uses next to no CPU.
+- **Windows and Linux.** On Windows it's a tray app; on Linux (SteamOS, Bazzite, Ubuntu, Fedora, Arch and others) a background service. Both use next to no CPU.
 - **Open source**, MIT licensed.
 
 ## Requirements
@@ -53,13 +53,15 @@ The picture never leaves the cable. Only the controller travels over the network
 |---|---|
 | **TV** | A Samsung smart TV running Tizen that allows Developer Mode. Tested on a 2021 Q70A (Tizen 6.0). |
 | **Controller** | Any Bluetooth controller your TV accepts. Tested with a DualShock 4. |
-| **PC** | Windows 10 or 11 (64-bit) with the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver. |
+| **PC** | Windows 10 or 11 (64-bit) with the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver, **or** Linux with Python 3.8+ ([details](docs/linux.md)). |
 | **Picture** | Your PC connected to the TV over HDMI, by any means: cable, fiber HDMI or an HDMI-over-Ethernet extender. |
 | **Network** | TV and PC on the same home network. |
 
 ## Installation
 
 ### 1. On the PC
+
+#### Windows
 
 1. Install the **[ViGEmBus driver](https://github.com/nefarius/ViGEmBus/releases/latest)** (`ViGEmBus_*_x64_x86_arm64.exe`). Restart if it asks.
 2. Download **`Padthru.exe`** from the [latest release](https://github.com/labanmne/padthru/releases/latest) and run it.
@@ -70,12 +72,21 @@ Padthru now sits in the tray next to the clock. Its menu shows the PC's address 
 
 > Release files are built by [GitHub Actions](.github/workflows/release.yml) straight from the tagged source. Windows SmartScreen may still warn about a new, unsigned app: click **More info → Run anyway**, or build it yourself (see [Building from source](#building-from-source)).
 
+#### Linux
+
+```bash
+curl -fsSLO https://github.com/labanmne/padthru/releases/latest/download/install-linux.sh
+bash install-linux.sh
+```
+
+The installer runs as your normal user and asks for sudo only if it has to: to let you create virtual controllers (the same udev rule Steam uses; usually already there if Steam is installed) and to open port 47811 if a firewall is on. Padthru then runs as a background service that starts when you sign in. [docs/linux.md](docs/linux.md) explains every step, how to run it without the installer, and how to remove it.
+
 ### 2. On the TV
 
 Samsung TVs install apps from outside the store through **Developer Mode**. You do this once.
 
-1. **Turn on Developer Mode.** Open **Apps** on the TV and type **1 2 3 4 5** on the remote. Switch Developer Mode **On**, enter your PC's IP address (shown in the Padthru tray menu) as **Host PC IP**, then restart the TV (hold the power button until it turns off and on).
-2. **Install Padthru on the TV.** On the PC, download **`Padthru.wgt`** from the [latest release](https://github.com/labanmne/padthru/releases/latest) and install it with **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)**, a free installer that signs the app for your TV: select your TV, choose the custom `.wgt` option and pick `Padthru.wgt`. The first install may ask you to sign in with a Samsung account so it can create your developer certificate.
+1. **Turn on Developer Mode.** Open **Apps** on the TV and type **1 2 3 4 5** on the remote. Switch Developer Mode **On**, enter the IP address of the computer you'll install from (on Windows it's shown in the Padthru tray menu; on Linux the installer prints it) as **Host PC IP**, then restart the TV (hold the power button until it turns off and on).
+2. **Install Padthru on the TV.** On that computer, download **`Padthru.wgt`** from the [latest release](https://github.com/labanmne/padthru/releases/latest) and install it with **[Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung)** (Windows, macOS and Linux), a free installer that signs the app for your TV: select your TV, choose the custom `.wgt` option and pick `Padthru.wgt`. The first install may ask you to sign in with a Samsung account so it can create your developer certificate.
 3. **Recommended picture settings** for the HDMI port your PC uses, under *Settings → General → External Device Manager*:
    - **Input Signal Plus: On.** Without it, the TV only accepts limited resolutions and no HDR on that port.
    - **Game Mode: On.** This gives the lowest input lag.
@@ -130,13 +141,13 @@ You can repeat the picture test with [`tools/lagtest.html`](tools/lagtest.html);
 
 - **Samsung Tizen TVs only.** Padthru relies on Samsung's TV Window API. LG webOS or Android TV would need their own app; contributions are welcome.
 - **The app has to stay open.** Pressing Home or switching apps stops controller input until you return to Padthru.
-- **Windows only** on the PC side, because it uses ViGEmBus for the virtual controller. ViGEmBus is no longer developed upstream but still installs and works on Windows 10 and 11.
+- **Windows and Linux** on the PC side, no macOS (it has no supported way to create a virtual controller). On Windows it relies on ViGEmBus, which is no longer developed upstream but still installs and works on Windows 10 and 11. **Linux support is new in 0.2.0** and was tested with a simulated TV ([details](docs/linux.md)); reports from real setups are very welcome.
 - **Same network.** Automatic discovery searches the TV's own subnet (e.g. `192.168.1.x`). If your PC is elsewhere, enter its address under **Green → Settings**.
 - **Trusted networks only.** The PC app accepts controller input from your local network on TCP port **47811** without a password, so keep the firewall rule to *Private* networks.
 
 ## Troubleshooting
 
-The short version is below. [docs/troubleshooting.md](docs/troubleshooting.md) has more.
+The short version is below. [docs/troubleshooting.md](docs/troubleshooting.md) has more, and Linux has its own section in [docs/linux.md](docs/linux.md#troubleshooting).
 
 | Symptom | Fix |
 |---|---|
@@ -155,9 +166,11 @@ cd padthru
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
-This produces `dist\Padthru.exe`, `dist\Padthru.wgt` and `dist\SHA256SUMS.txt`. It needs Python 3.10+ on Windows; the script installs `websockets`, `pystray`, `Pillow` and `PyInstaller`.
+This produces `Padthru.exe`, `Padthru.wgt`, `padthru-linux.pyz`, `install-linux.sh` and `SHA256SUMS.txt` in `dist\`. It needs Python 3.10+ on Windows; the script installs `websockets`, `pystray`, `Pillow` and `PyInstaller`. On Linux, `python3 tools/build_pyz.py` builds just the Linux app.
 
 To run the PC app straight from source: `pip install -r pc\requirements.txt`, then `python pc\padthru.py --console --debug`.
+
+No Samsung TV at hand? [`tools/fake_tv.py`](tools/fake_tv.py) acts like the TV app: it connects to Padthru, presses every button and moves the sticks.
 
 How the pieces talk to each other is described in [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -178,7 +191,7 @@ Probably, if it runs Tizen and has Developer Mode. Please open an issue with you
 ## Credits
 
 Padthru stands on the shoulders of:
-- [ViGEmBus / ViGEmClient](https://github.com/nefarius/ViGEmBus) by Benjamin Höglinger-Stelzer, the virtual controller driver.
+- [ViGEmBus / ViGEmClient](https://github.com/nefarius/ViGEmBus) by Benjamin Höglinger-Stelzer, the virtual controller driver on Windows, and the Linux kernel's `uinput` on Linux.
 - [vgamepad](https://github.com/yannbouteiller/vgamepad) by Yann Bouteiller, the Python bindings for ViGEm.
 - [websockets](https://github.com/python-websockets/websockets), [pystray](https://github.com/moses-palmer/pystray) and [Pillow](https://python-pillow.org/).
 - [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung), which makes sideloading painless.

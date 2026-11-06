@@ -1,12 +1,14 @@
 """Padthru PC app.
 
 Receives controller state from the Padthru TV app over the local network and
-feeds it to a virtual Xbox 360 controller (ViGEmBus), so games on this PC see
-the controller that is paired to your Samsung TV.
+feeds it to a virtual Xbox 360 controller, so games on this PC see the
+controller that is paired to your Samsung TV.
 
-    Padthru.exe              tray app (default)
-    Padthru.exe --console    no tray, log to the console
-    Padthru.exe --debug      also log every button and stick change
+  Windows: ViGEmBus driver, tray app.     Linux: uinput, background service.
+
+    Padthru.exe / padthru            start (Windows: tray icon; Linux: runs in the foreground)
+    --console                        Windows: no tray, log to the console
+    --debug                          also log every button and stick change
 """
 import argparse
 import asyncio
@@ -14,6 +16,7 @@ import json
 import logging
 import logging.handlers
 import os
+import signal
 import socket
 import sys
 import threading
@@ -21,18 +24,22 @@ import time
 import webbrowser
 
 APP = "Padthru"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 PORT = 47811
 REPO_URL = "https://github.com/labanmne/padthru"
-VIGEMBUS_URL = "https://github.com/nefarius/ViGEmBus/releases/latest"
 STALE_AFTER = 0.6  # seconds without a packet from the TV -> release all inputs
 
+IS_WINDOWS = sys.platform == "win32"
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUNDLE = getattr(sys, "_MEIPASS", HERE)
 if not getattr(sys, "frozen", False):
-    sys.path.insert(0, os.path.join(HERE, "vendor"))
+    # explicit, because `python -I` leaves the script's own folder off sys.path
+    sys.path[:0] = [p for p in (HERE, os.path.join(HERE, "vendor")) if p not in sys.path]
 
-DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), APP)
+if IS_WINDOWS:
+    DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), APP)
+else:
+    DATA_DIR = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "padthru")
 LOG_PATH = os.path.join(DATA_DIR, "padthru.log")
 FIRST_RUN_FLAG = os.path.join(DATA_DIR, "first-run-done")
 
@@ -42,20 +49,27 @@ log = logging.getLogger("padthru")
 # ---------------------------------------------------------------- utilities
 
 def setup_logging(console):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    fmt = logging.Formatter("%(asctime)s %(message)s")
     log.setLevel(logging.INFO)
-    fh = logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
-    fh.setFormatter(fmt)
-    log.addHandler(fh)
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        fh = logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        log.addHandler(fh)
+    except OSError as e:
+        print(f"{APP}: cannot write the log file {LOG_PATH}: {e}", file=sys.stderr)
     if console:
+        # systemd's journal adds its own timestamps
+        fmt = "%(message)s" if os.environ.get("INVOCATION_ID") else "%(asctime)s %(message)s"
         sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(fmt)
+        sh.setFormatter(logging.Formatter(fmt))
         log.addHandler(sh)
 
 
 def message_box(text, yes_no=False, error=False):
-    """Native Windows message box. Returns True for Yes/OK."""
+    """Native Windows message box (Yes/OK -> True). Elsewhere: print it."""
+    if not IS_WINDOWS:
+        print(text, file=sys.stderr)
+        return False
     try:
         import ctypes
         flags = (0x4 if yes_no else 0x0) | (0x10 if error else 0x40) | 0x10000  # MB_SETFOREGROUND
@@ -93,7 +107,18 @@ def clamp(v, lo=-1.0, hi=1.0):
     return lo if v < lo else hi if v > hi else v
 
 
-# ---------------------------------------------------------------- autostart
+def load_backend():
+    """The module that creates virtual controllers on this OS."""
+    if IS_WINDOWS:
+        import vpad_windows as backend
+    elif sys.platform.startswith("linux"):
+        import vpad_linux as backend
+    else:
+        raise RuntimeError(f"{APP} runs on Windows and Linux, not on {sys.platform}.")
+    return backend
+
+
+# ---------------------------------------------------------------- autostart (Windows)
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -127,73 +152,66 @@ def set_autostart(on):
     log.info("start with Windows: %s", "on" if on else "off")
 
 
-# ---------------------------------------------------------------- virtual controllers
+# ---------------------------------------------------------------- controllers
+
+# W3C "standard" gamepad button index -> Xbox button
+BUTTONS = {
+    0: "A", 1: "B", 2: "X", 3: "Y", 4: "LB", 5: "RB", 8: "BACK", 9: "START",
+    10: "LS", 11: "RS", 12: "UP", 13: "DOWN", 14: "LEFT", 15: "RIGHT", 16: "GUIDE", 17: "BACK",
+}
+
 
 class Pad:
-    """One virtual Xbox 360 controller, fed with W3C 'standard' gamepad state."""
+    """One TV controller, mirrored by one virtual Xbox 360 controller."""
 
-    def __init__(self, vg, idx, bridge):
-        b = vg.XUSB_BUTTON
-        self.buttons = {
-            0: b.XUSB_GAMEPAD_A, 1: b.XUSB_GAMEPAD_B, 2: b.XUSB_GAMEPAD_X, 3: b.XUSB_GAMEPAD_Y,
-            4: b.XUSB_GAMEPAD_LEFT_SHOULDER, 5: b.XUSB_GAMEPAD_RIGHT_SHOULDER,
-            8: b.XUSB_GAMEPAD_BACK, 9: b.XUSB_GAMEPAD_START,
-            10: b.XUSB_GAMEPAD_LEFT_THUMB, 11: b.XUSB_GAMEPAD_RIGHT_THUMB,
-            12: b.XUSB_GAMEPAD_DPAD_UP, 13: b.XUSB_GAMEPAD_DPAD_DOWN,
-            14: b.XUSB_GAMEPAD_DPAD_LEFT, 15: b.XUSB_GAMEPAD_DPAD_RIGHT,
-            16: b.XUSB_GAMEPAD_GUIDE, 17: b.XUSB_GAMEPAD_BACK,
-        }
+    def __init__(self, backend, idx, bridge):
         self.idx = idx
         self.bridge = bridge
-        self.pad = vg.VX360Gamepad()
-        self.pad.register_notification(callback_function=self._rumble)
         self.ws = None
         self.last = 0.0
         self.active = False
         self.debug_state = None
-        log.info("virtual controller %d created", idx)
+        self.device = backend.VirtualPad(self._rumble)
+        log.info("virtual controller %d created (%s)", idx, self.device.name())
 
-    def _rumble(self, client, target, large_motor, small_motor, led_number, user_data):
+    def _rumble(self, large_motor, small_motor):
+        """Called by the backend, from any thread, when a game changes the rumble (0-255 each)."""
         ws, loop = self.ws, self.bridge.loop
         if ws is None or loop is None:
             return
-        msg = json.dumps({"r": [self.idx, large_motor, small_motor]})
+        msg = json.dumps({"r": [self.idx, int(large_motor), int(small_motor)]})
         try:
             asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
         except Exception:  # noqa: BLE001
             pass
 
     def apply(self, b, a):
-        down = {i for i in self.buttons if i < len(b) and clamp(b[i], 0, 1) > 0.5}
+        down = {i for i in BUTTONS if i < len(b) and clamp(b[i], 0, 1) > 0.5}
         # Samsung TVs keep the PS/Home button for their own menu, so Share + Options = Guide.
         if 8 in down and 9 in down:
             down -= {8, 9}
             down.add(16)
-        pad = self.pad
-        pad.reset()
-        for i in down:
-            pad.press_button(button=self.buttons[i])
-        pad.left_trigger_float(value_float=clamp(b[6], 0, 1) if len(b) > 6 else 0.0)
-        pad.right_trigger_float(value_float=clamp(b[7], 0, 1) if len(b) > 7 else 0.0)
-        ax = list(a) + [0, 0, 0, 0]
-        pad.left_joystick_float(x_value_float=clamp(ax[0]), y_value_float=-clamp(ax[1]))
-        pad.right_joystick_float(x_value_float=clamp(ax[2]), y_value_float=-clamp(ax[3]))
-        pad.update()
+        ax = list(a[:4]) + [0, 0, 0, 0]
+        self.device.set_state(
+            {BUTTONS[i] for i in down},
+            clamp(b[6], 0, 1) if len(b) > 6 else 0.0,
+            clamp(b[7], 0, 1) if len(b) > 7 else 0.0,
+            clamp(ax[0]), clamp(ax[1]), clamp(ax[2]), clamp(ax[3]),
+        )
         self.last = time.monotonic()
         self.active = True
 
     def release(self):
         if self.active:
-            self.pad.reset()
-            self.pad.update()
+            self.device.set_state(set(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
             self.active = False
 
 
 # ---------------------------------------------------------------- network bridge
 
 class Bridge:
-    def __init__(self, vg, port, debug):
-        self.vg = vg
+    def __init__(self, backend, port, debug):
+        self.backend = backend
         self.port = port
         self.debug = debug
         self.pads = {}
@@ -202,6 +220,7 @@ class Bridge:
         self.stop_event = None
         self.on_change = lambda: None
         self.seen_ids = set()
+        self.pad_error_at = 0.0
 
     # status for the tray
     def status_text(self):
@@ -213,7 +232,15 @@ class Bridge:
 
     def get_pad(self, idx):
         if idx not in self.pads:
-            self.pads[idx] = Pad(self.vg, idx, self)
+            now = time.monotonic()
+            if now - self.pad_error_at < 5:
+                return None
+            try:
+                self.pads[idx] = Pad(self.backend, idx, self)
+            except Exception as e:  # noqa: BLE001
+                self.pad_error_at = now
+                log.error("cannot create virtual controller %d: %s", idx, e)
+                return None
         return self.pads[idx]
 
     async def handler(self, ws):
@@ -226,10 +253,12 @@ class Bridge:
                     msg = json.loads(raw)
                 except ValueError:
                     continue
+                if not isinstance(msg, dict):
+                    continue
                 if "hello" in msg:
                     await ws.send(json.dumps({"padthru": 1, "v": VERSION, "name": socket.gethostname()}))
                     hello = msg.get("hello") or {}
-                    if hello.get("app") == "padthru-tv" and not verified:
+                    if isinstance(hello, dict) and hello.get("app") == "padthru-tv" and not verified:
                         verified = True
                         self.tvs[ws] = peer
                         log.info("TV connected from %s (TV app %s)", peer, hello.get("v"))
@@ -247,6 +276,8 @@ class Bridge:
                 if not isinstance(idx, int) or not 0 <= idx <= 3:
                     continue
                 pad = self.get_pad(idx)
+                if pad is None:
+                    continue
                 if pad.ws is not ws:
                     pad.ws = ws
                     self.on_change()
@@ -259,6 +290,8 @@ class Bridge:
                     self.seen_ids.add((idx, msg["id"]))
                     log.info("controller %d: %s (mapping %s)", idx, msg["id"], msg.get("m"))
                 b, a = msg.get("b") or [], msg.get("a") or []
+                if not isinstance(b, list) or not isinstance(a, list):
+                    continue
                 if self.debug:
                     state = (tuple(i for i, v in enumerate(b) if clamp(v, 0, 1) > 0.5),
                              tuple(round(clamp(v), 1) for v in a[:4]))
@@ -279,7 +312,10 @@ class Bridge:
 
     async def watchdog(self):
         while not self.stop_event.is_set():
-            await asyncio.sleep(0.2)
+            try:
+                await asyncio.wait_for(self.stop_event.wait(), 0.2)
+            except asyncio.TimeoutError:
+                pass
             now = time.monotonic()
             for p in self.pads.values():
                 if p.active and now - p.last > STALE_AFTER:
@@ -309,19 +345,25 @@ class Bridge:
             started["error"] = e
             started["event"].set()
             return
-        log.info("%s %s listening on port %d, addresses: %s", APP, VERSION, self.port,
-                 ", ".join(local_addresses()) or "unknown")
+        log.info("%s %s listening on port %d (%s), addresses: %s", APP, VERSION, self.port,
+                 self.backend.describe(), ", ".join(local_addresses()) or "unknown")
         started["event"].set()
         await self.watchdog()
         server.close()
         await server.wait_closed()
+        for p in self.pads.values():
+            try:
+                p.device.close()
+            except Exception:  # noqa: BLE001
+                pass
+        log.info("%s stopped", APP)
 
     def stop(self):
         if self.loop and self.stop_event:
             self.loop.call_soon_threadsafe(self.stop_event.set)
 
 
-# ---------------------------------------------------------------- tray
+# ---------------------------------------------------------------- tray (Windows)
 
 def run_tray(bridge):
     import pystray
@@ -387,26 +429,27 @@ def run_tray(bridge):
 # ---------------------------------------------------------------- entry point
 
 def main():
-    ap = argparse.ArgumentParser(prog="Padthru", description="Padthru PC app")
-    ap.add_argument("--console", action="store_true", help="no tray icon, log to the console")
+    ap = argparse.ArgumentParser(prog="padthru", description=f"{APP} {VERSION} PC app ({REPO_URL})")
+    ap.add_argument("--console", action="store_true", help="Windows: no tray icon, log to the console")
     ap.add_argument("--debug", action="store_true", help="log every button and stick change")
     ap.add_argument("--port", type=int, default=PORT, help=f"TCP port (default {PORT}; the TV app expects {PORT})")
+    ap.add_argument("--version", action="version", version=f"{APP} {VERSION}")
     args = ap.parse_args()
+    console = args.console or not IS_WINDOWS  # no tray on Linux: it runs as a service or in a terminal
 
-    setup_logging(console=args.console)
+    setup_logging(console=console)
 
     try:
-        import vgamepad as vg  # connects to ViGEmBus on import
+        backend = load_backend()
+        backend.check()
     except Exception as e:  # noqa: BLE001
-        log.error("ViGEmBus not available: %r", e)
-        if message_box("Padthru needs the free ViGEmBus driver to create a virtual Xbox controller, "
-                       "and it isn't installed (or isn't running).\n\n"
-                       "Install it, restart Windows if asked, then start Padthru again.\n\n"
-                       "Open the download page now?", yes_no=True, error=True):
-            webbrowser.open(VIGEMBUS_URL)
+        log.error("%s", e)
+        if IS_WINDOWS:
+            if message_box(f"{e}\n\nOpen the download page now?", yes_no=True, error=True):
+                webbrowser.open(getattr(e, "help_url", REPO_URL))
         return 1
 
-    bridge = Bridge(vg, args.port, args.debug)
+    bridge = Bridge(backend, args.port, args.debug)
     started = {"event": threading.Event(), "error": None}
     thread = threading.Thread(target=lambda: asyncio.run(bridge.main(started)), name="bridge", daemon=True)
     thread.start()
@@ -414,16 +457,22 @@ def main():
     if started["error"] is not None:
         log.error("cannot listen on port %d: %s", args.port, started["error"])
         message_box(f"Padthru could not start: port {args.port} is already in use.\n\n"
-                    "Padthru is probably already running. Look for its icon next to the clock.", error=True)
+                    "Padthru is probably already running."
+                    + (" Look for its icon next to the clock." if IS_WINDOWS else ""), error=True)
         return 1
 
-    if args.console:
-        print(f"{APP} {VERSION} is running. This PC: {', '.join(local_addresses())}. Press Ctrl+C to quit.")
+    if console:
+        if not IS_WINDOWS:
+            signal.signal(signal.SIGTERM, lambda *_: bridge.stop())
+        if sys.stdout is not None and sys.stdout.isatty():  # None in the windowed Padthru.exe
+            print(f"{APP} {VERSION} is running. This PC: {', '.join(local_addresses()) or 'unknown'}. "
+                  "Open Padthru on the TV. Press Ctrl+C to quit.")
         try:
             while thread.is_alive():
                 thread.join(0.5)
         except KeyboardInterrupt:
             bridge.stop()
+            thread.join(3)
         return 0
 
     run_tray(bridge)

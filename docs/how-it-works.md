@@ -14,15 +14,23 @@ A small Tizen web app.
 
 The TV's PS / Home button is handled by the TV itself and never reaches apps.
 
-## PC app (`pc/padthru.py`)
+## PC app (`pc/`)
 
-A Python tray app, shipped as a single `Padthru.exe` built with PyInstaller.
+One Python program with a small backend per operating system:
 
-- Listens on TCP **47811** (WebSocket) on all interfaces.
-- Creates a virtual **Xbox 360** controller per TV controller with [ViGEmBus](https://github.com/nefarius/ViGEmBus) through [vgamepad](https://github.com/yannbouteiller/vgamepad).
-- Maps the W3C *standard* gamepad layout onto Xbox buttons. **Share + Options** pressed together become the **Guide** button, since the TV keeps the PS button.
-- Releases every input if the TV goes quiet for 600 ms (app closed, Wi-Fi drop), so nothing stays held down.
-- Forwards rumble requests from games back to the TV.
+| | Windows | Linux |
+|---|---|---|
+| Shipped as | `Padthru.exe` (PyInstaller, tray app) | `padthru-linux.pyz` (zipapp, systemd user service) |
+| Virtual controller | [ViGEmBus](https://github.com/nefarius/ViGEmBus) through [vgamepad](https://github.com/yannbouteiller/vgamepad) (`vpad_windows.py`) | the kernel's `uinput`, pure Python `ioctl` calls (`vpad_linux.py`) |
+| Rumble from games | ViGEm notification callback | `FF_RUMBLE` effects uploaded to the virtual device |
+
+What both do:
+
+- Listen on TCP **47811** (WebSocket) on all interfaces.
+- Create a virtual **Xbox 360** controller per TV controller.
+- Map the W3C *standard* gamepad layout onto Xbox buttons. **Share + Options** pressed together become the **Guide** button, since the TV keeps the PS button.
+- Release every input if the TV goes quiet for 600 ms (app closed, Wi-Fi drop), so nothing stays held down.
+- Forward rumble requests from games back to the TV.
 
 ## Protocol
 
@@ -46,9 +54,13 @@ Discovery: `GET http://<pc>:47811/padthru` returns `{"padthru": 1, "v": "0.1.0",
 |---|---|
 | `tv/config.xml` | Tizen manifest (package `PadthruApp`, privileges) |
 | `tv/main.js` | Everything the TV app does |
-| `pc/padthru.py` | The PC app |
+| `pc/padthru.py` | The PC app: network, controller mapping, tray (Windows) |
+| `pc/vpad_windows.py`, `pc/vpad_linux.py` | Virtual controller backends |
 | `pc/vendor/vgamepad` | Vendored vgamepad 0.2.0 (see below) |
-| `tools/build.ps1` | Builds `Padthru.wgt` and `Padthru.exe` |
+| `linux/install.sh` | Linux installer, published as `install-linux.sh` |
+| `tools/build.ps1` | Builds all release files |
+| `tools/build_pyz.py` | Builds `padthru-linux.pyz` (any OS) |
+| `tools/fake_tv.py` | Acts like the TV app, for testing without a TV |
 | `tools/make_icon.py` | Draws the icons |
 | `tools/lagtest.html` | Millisecond timer for latency tests |
 

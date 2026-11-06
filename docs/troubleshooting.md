@@ -4,6 +4,8 @@ Start with the info panel on the TV: press **Red** to show it. It tells you what
 
 On the PC, **Open log** in the tray menu shows what happened; the file is `%LOCALAPPDATA%\Padthru\padthru.log`. For more detail, quit Padthru and run `Padthru.exe --debug`, which also logs every button press.
 
+This page covers Windows. On Linux, see the [Linux troubleshooting table](linux.md#troubleshooting); the TV-side sections below apply there too.
+
 ## The TV can't find the PC
 
 - **Is Padthru running?** Look for its icon next to the clock (it may be under the **^** arrow).
