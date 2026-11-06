@@ -1,0 +1,57 @@
+name: Linux test
+
+# Runs the Linux PC app on a real Ubuntu kernel, acts as the TV, and checks the virtual
+# Xbox 360 controller both at the input-device level and through SDL2, the way games see it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, python: '3.8' }
+          - { os: ubuntu-24.04, python: '3.12' }
+          - { os: ubuntu-24.04, python: '3.14' }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build padthru-linux.pyz
+        run: python tools/build_pyz.py
+
+      - name: Check the installer script
+        run: bash -n linux/install.sh
+
+      - name: Enable uinput and install SDL2
+        run: |
+          sudo modprobe uinput
+          sudo chmod 0666 /dev/uinput
+          sudo apt-get install -y -qq libsdl2-2.0-0 > /dev/null
+
+      - name: Start Padthru
+        run: |
+          python dist/padthru-linux.pyz --debug > padthru.log 2>&1 &
+          sleep 3
+
+      - name: End-to-end test (simulated TV, input device)
+        run: sudo "$(which python)" tests/linux_e2e.py dist/padthru-linux.pyz
+
+      - name: End-to-end test (simulated TV, SDL2)
+        run: sudo "$(which python)" tests/linux_sdl.py dist/padthru-linux.pyz
+
+      - name: Padthru log
+        if: always()
+        run: cat padthru.log
