@@ -13,6 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/PC-Windows%20%7C%20Linux-0078D6.svg" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/TV-Samsung%20Tizen-1428A0.svg" alt="Samsung Tizen TVs">
+  <a href="https://github.com/labanmne/padthru/actions/workflows/test.yml"><img src="https://github.com/labanmne/padthru/actions/workflows/test.yml/badge.svg" alt="Linux test"></a>
   <a href="https://github.com/labanmne/padthru/releases/latest"><img src="https://img.shields.io/github/v/release/labanmne/padthru?label=release" alt="Latest release"></a>
 </p>
 
@@ -141,7 +142,7 @@ You can repeat the picture test with [`tools/lagtest.html`](tools/lagtest.html);
 
 - **Samsung Tizen TVs only.** Padthru relies on Samsung's TV Window API. LG webOS or Android TV would need their own app; contributions are welcome.
 - **The app has to stay open.** Pressing Home or switching apps stops controller input until you return to Padthru.
-- **Windows and Linux** on the PC side, no macOS (it has no supported way to create a virtual controller). On Windows it relies on ViGEmBus, which is no longer developed upstream but still installs and works on Windows 10 and 11. **Linux support is new in 0.2.0** and was tested with a simulated TV ([details](docs/linux.md)); reports from real setups are very welcome.
+- **Windows and Linux** on the PC side, no macOS (it has no supported way to create a virtual controller). On Windows it relies on ViGEmBus, which is no longer developed upstream but still installs and works on Windows 10 and 11. **Linux support is new in 0.2.0.** It's tested automatically with a simulated TV ([details](docs/linux.md)); reports from real setups are very welcome.
 - **Same network.** Automatic discovery searches the TV's own subnet (e.g. `192.168.1.x`). If your PC is elsewhere, enter its address under **Green → Settings**.
 - **Trusted networks only.** The PC app accepts controller input from your local network on TCP port **47811** without a password, so keep the firewall rule to *Private* networks.
 

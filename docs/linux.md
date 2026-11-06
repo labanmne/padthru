@@ -4,7 +4,7 @@ The Linux PC app does the same job as `Padthru.exe`: it receives the controller 
 
 It's a single file, `padthru-linux.pyz` (about 120 KB), with no dependencies beyond Python 3.8 or newer.
 
-> **New in 0.2.0.** The Linux app was tested end to end on Ubuntu 24.04 (kernel 6.18) with a simulated TV: buttons, sticks, triggers, D-pad, the Guide combo and rumble, read back both from the input device and through SDL 2.30, the library most games use. It hasn't been tested on a real Linux gaming PC wired to a TV yet. If you run it, please [report your distro](https://github.com/labanmne/padthru/issues/new/choose), even if it just works.
+> **New in 0.2.0.** Every change is [tested automatically](../.github/workflows/test.yml) on Ubuntu with Python 3.8, 3.12 and 3.14. A simulated TV drives the app, and the virtual controller is checked both at the input-device level and through SDL, the library most games use: buttons, sticks, triggers, D-pad, the Guide combo and rumble. It hasn't been tested on a real Linux gaming PC wired to a TV yet. If you run it, please [report your distro](https://github.com/labanmne/padthru/issues/new/choose), even if it just works.
 
 ## Requirements
 

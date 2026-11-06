@@ -29,4 +29,4 @@ The [installation guide](https://github.com/labanmne/padthru#installation) has t
 - **Linux installer** with a systemd user service, Steam's udev rule (only if needed), firewall handling, and `--uninstall`.
 - **`tools/fake_tv.py`** for testing the PC side without a TV.
 
-The Linux app was tested end to end on Ubuntu 24.04 with a simulated TV, including through SDL 2.30, the library most games use. It hasn't run on a real Linux gaming setup yet, so please report your distro with the "Works on my TV" template, even if everything just works. The TV app is unchanged apart from its version number, so 0.1.0 TV installs keep working with both PC apps.
+The Linux app is tested automatically on Ubuntu with Python 3.8, 3.12 and 3.14: a simulated TV drives it, and the controller is checked at the input-device level and through SDL, the library most games use. It hasn't run on a real Linux gaming setup yet, so please report your distro with the "Works on my TV" template, even if everything just works. The TV app is unchanged apart from its version number, so 0.1.0 TV installs keep working with both PC apps.
