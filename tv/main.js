@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '0.4.0';
+  var VERSION = '0.4.1';
   var PORT = 47811;
   var POLL_MS = 4;             // how often controllers are read
   var KEEPALIVE_MS = 100;      // unchanged state is resent this often (the PC releases input after 600 ms of silence)

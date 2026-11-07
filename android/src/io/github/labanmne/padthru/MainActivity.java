@@ -47,7 +47,7 @@ import org.json.JSONObject;
  * screen, so this app stays open on the box while the TV shows the PC's HDMI input.
  */
 public class MainActivity extends Activity {
-    static final String VERSION = "0.4.0";
+    static final String VERSION = "0.4.1";
     private static final long KEEPALIVE_MS = 100;   // the PC releases input after 600 ms of silence
     private static final long MIN_GAP_NS = 2_000_000; // at most 500 messages a second per controller
 

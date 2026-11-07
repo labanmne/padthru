@@ -11,7 +11,7 @@
 | **padthru-linux.pyz** | The Linux app itself, one file, for Python 3.8 or newer. |
 | SHA256SUMS.txt | Checksums of the files built by GitHub Actions |
 
-Everything except the box app is built by GitHub Actions straight from this tag's source. `Padthru-android.apk` is built from the same source with `tools/build_android.sh` and signed with the project's key, so updates install over it; its SHA-256 is `fad13479c1ce8faaafdcdff92b278109711a0ed0ca3edfe1e92944abba67bca1`.
+Everything except the box app is built by GitHub Actions straight from this tag's source. `Padthru-android.apk` is built from the same source with `tools/build_android.sh` and signed with the project's key, so updates install over it; its SHA-256 is `e0d67983c57f942ec34d81b7a4364d801fe9e5e1f22d42a8493f8d7fdaeae876`.
 
 ### Setup
 
@@ -21,6 +21,10 @@ Everything except the box app is built by GitHub Actions straight from this tag'
   - **Android TV box:** turn on USB debugging, `adb install Padthru-android.apk`, open Padthru once and allow debugging from `padthru@box`. From then on, just switch the TV's input.
 
 The [installation guide](https://github.com/labanmne/padthru#installation) has the details.
+
+### New in 0.4.1
+- **Controller auto-off, like a console.** In the box app's background mode, wireless controllers are switched off when the TV goes to standby (HDMI-CEC) or after 15 minutes without use; press PS to turn them back on. Set `auto_off_minutes` in `/data/local/tmp/padthru/settings.properties` on the box (0 = never). Android 13+.
+- Box app fixes for Android 14 (Bluetooth access, controller lookup, rumble on boxes that don't allow writing to input devices).
 
 ### New in 0.4.0
 - **Android TV box app** with the DualShock's motion sensors, touchpad (fingers and click), light bar and battery on the PC's virtual DualShock 4 (Windows). Measured on a Skyworth HY44G: a DualShock 4 on the box's USB port at its full 250 updates a second, about 44 over Bluetooth.
