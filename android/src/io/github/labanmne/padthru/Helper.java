@@ -51,6 +51,8 @@ public final class Helper {
     private static final long MIN_GAP_NS = 2_000_000;
     private static final long CEC_POLL_MS = 700;
     private static final Pattern ACTIVE = Pattern.compile("isActiveSource\\(\\):\\s*(true|false)");
+    private static final Pattern TV_STANDBY = Pattern.compile("\\[R\\] time=(\\S+ \\S+) message=<Standby>");
+    private static final double DEFAULT_AUTO_OFF_MINUTES = 15;
 
     // ------------------------------------------------------------------ state
 
@@ -93,6 +95,8 @@ public final class Helper {
         long lastSentNs, lastSentMs;
         int sent, rate;
         String pcKind = "";
+        long lastActivity = System.currentTimeMillis();
+        boolean switchedOff;
         int rumbleId = -1;
         int ffFd = -1;              // a writable handle for kernel rumble, where the box allows one
         int rumbleLarge, rumbleSmall;
@@ -114,6 +118,8 @@ public final class Helper {
     private volatile boolean boxActive = true; // until CEC says otherwise
     private volatile boolean cecKnown;
     private volatile String pcStatus = "Looking for your PC…";
+    private String lastTvStandby;   // newest <Standby> from the TV in the CEC log
+    private boolean cecPolled;
 
     private Helper(ServerSocket statusSocket) {
         this.statusSocket = statusSocket;
@@ -256,6 +262,7 @@ public final class Helper {
         thread("padthru-cec", this::cecLoop);
         thread("padthru-scan", this::scanLoop);
         thread("padthru-rumble", this::rumbleRefreshLoop);
+        thread("padthru-auto-off", this::autoOffLoop);
         log("Padthru helper " + MainActivity.VERSION + " started");
         sendLoop();
     }
@@ -286,15 +293,26 @@ public final class Helper {
             try {
                 Process p = Runtime.getRuntime().exec(new String[]{"dumpsys", "hdmi_control"});
                 StringBuilder sb = new StringBuilder();
+                String standby = null;
                 try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                     String line;
                     while ((line = r.readLine()) != null) {
                         if (line.contains("isActiveSource")) sb.append(line);
+                        if (line.contains("<Standby>")) {
+                            Matcher sm = TV_STANDBY.matcher(line);
+                            if (sm.find() && (standby == null || sm.group(1).compareTo(standby) > 0)) standby = sm.group(1);
+                        }
                     }
                 }
                 p.waitFor();
                 Matcher m = ACTIVE.matcher(sb);
                 if (m.find()) active = Boolean.parseBoolean(m.group(1));
+                if (standby != null && !standby.equals(lastTvStandby)) {
+                    boolean fresh = cecPolled; // the first look only shows history
+                    lastTvStandby = standby;
+                    if (fresh) onTvStandby();
+                }
+                cecPolled = true;
             } catch (Exception ignored) {
             }
             boolean known = active != null;
@@ -334,6 +352,88 @@ public final class Helper {
             int rc = Evdev.grab(n.fd, want);
             if (rc == 0) n.grabbed = want;
             else log("grab " + n.path + " failed: " + rc);
+        }
+    }
+
+    // ------------------------------------------------------------------ auto-off
+
+    /** Minutes without use before a wireless controller is switched off (0 = never). */
+    private static double autoOffMinutes() {
+        java.util.Properties props = new java.util.Properties();
+        try (FileInputStream in = new FileInputStream(new File(DIR, "settings.properties"))) {
+            props.load(in);
+            return Double.parseDouble(props.getProperty("auto_off_minutes", String.valueOf(DEFAULT_AUTO_OFF_MINUTES)).trim());
+        } catch (Exception e) {
+            return DEFAULT_AUTO_OFF_MINUTES;
+        }
+    }
+
+    private static boolean wireless(Pad p) {
+        return !p.usb && p.key.matches("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}");
+    }
+
+    private void autoOffLoop() {
+        while (true) {
+            sleep(5000);
+            double minutes = autoOffMinutes();
+            if (minutes <= 0) continue;
+            long now = System.currentTimeMillis();
+            List<Pad> idle = new ArrayList<>();
+            synchronized (lock) {
+                for (Pad p : groups.values()) {
+                    if (p.gamepad != null && !p.switchedOff && wireless(p) && now - p.lastActivity > minutes * 60000) idle.add(p);
+                }
+            }
+            String label = minutes == Math.floor(minutes) ? String.valueOf((long) minutes) : String.valueOf(minutes);
+            for (Pad p : idle) switchOff(p, "not used for " + label + " min");
+        }
+    }
+
+    /** The TV went to standby: switch wireless controllers off, like a console does. */
+    private void onTvStandby() {
+        List<Pad> on = new ArrayList<>();
+        synchronized (lock) {
+            for (Pad p : groups.values()) if (p.gamepad != null && !p.switchedOff && wireless(p)) on.add(p);
+        }
+        for (Pad p : on) switchOff(p, "the TV was turned off");
+    }
+
+    private static boolean bluetoothReady;
+
+    /**
+     * The Bluetooth adapter. Since Android 14 Bluetooth is a separate module whose service
+     * handle only ordinary app processes get at start-up; a process started with app_process
+     * has to register it itself (BluetoothFrameworkInitializer), or getDefaultAdapter() is null.
+     */
+    private static synchronized android.bluetooth.BluetoothAdapter bluetooth() {
+        if (!bluetoothReady) {
+            bluetoothReady = true;
+            try {
+                Class<?> manager = Class.forName("android.os.BluetoothServiceManager");
+                Object instance = manager.getConstructor().newInstance();
+                Class.forName("android.bluetooth.BluetoothFrameworkInitializer")
+                        .getMethod("setBluetoothServiceManager", manager).invoke(null, instance);
+            } catch (Throwable t) {
+                log("Bluetooth service registration: " + (t.getCause() != null ? t.getCause() : t));
+            }
+        }
+        return android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+    }
+
+    /** Drops the Bluetooth connection; a DualShock then turns itself off. PS turns it back on. */
+    private void switchOff(Pad p, String why) {
+        p.switchedOff = true;
+        try {
+            android.bluetooth.BluetoothAdapter adapter = bluetooth();
+            if (adapter == null) throw new IllegalStateException("no Bluetooth adapter");
+            android.bluetooth.BluetoothDevice dev = adapter.getRemoteDevice(p.key.toUpperCase(Locale.US));
+            // Android 13+: a system API the adb shell may use (it holds BLUETOOTH_PRIVILEGED)
+            Object result = android.bluetooth.BluetoothDevice.class.getMethod("disconnect").invoke(dev);
+            report("switched " + p.name + " off (" + why + ")" + (Integer.valueOf(0).equals(result) ? "" : ", result " + result));
+        } catch (NoSuchMethodException e) {
+            report("can't switch controllers off on Android " + Build.VERSION.RELEASE + " yet (" + why + ")");
+        } catch (Throwable t) {
+            report("couldn't switch " + p.name + " off: " + (t.getCause() != null ? t.getCause() : t));
         }
     }
 
@@ -540,6 +640,7 @@ public final class Helper {
             if (type == Evdev.EV_KEY) {
                 int i = buttonIndex(p, code);
                 if (i >= 0) p.buttons[i] = value != 0 ? 1 : 0;
+                p.lastActivity = System.currentTimeMillis();
             } else if (type == Evdev.EV_ABS) {
                 int[] abs = n.abs[code & 0x3f];
                 switch (code) {
@@ -559,10 +660,17 @@ public final class Helper {
                         break;
                     default:
                 }
+                // sticks resting near the middle jitter; only real movement counts as use
+                if (Math.abs(p.axes[0]) > 0.3f || Math.abs(p.axes[1]) > 0.3f || Math.abs(p.axes[2]) > 0.3f
+                        || Math.abs(p.axes[3]) > 0.3f || p.buttons[6] > 0.1f || p.buttons[7] > 0.1f
+                        || code == Evdev.ABS_HAT0X || code == Evdev.ABS_HAT0Y) {
+                    p.lastActivity = System.currentTimeMillis();
+                }
             }
         } else if (n.kind == 1) {
             if (type == Evdev.EV_ABS && code <= Evdev.ABS_RZ) p.rawMotion[code] = value;
         } else {
+            if (type == Evdev.EV_ABS || type == Evdev.EV_KEY) p.lastActivity = System.currentTimeMillis();
             if (type == Evdev.EV_KEY && code == Evdev.BTN_LEFT) {
                 p.buttons[17] = value != 0 ? 1 : 0;
             } else if (type == Evdev.EV_ABS) {

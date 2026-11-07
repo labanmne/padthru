@@ -2,6 +2,14 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Controller auto-off** in the box app's background mode: when the TV goes to standby (HDMI-CEC) or after 15 minutes without use (`auto_off_minutes` in `/data/local/tmp/padthru/settings.properties`), wireless controllers are disconnected, so a DualShock switches itself off. Android 13+.
+
+### Fixed
+- Box helper on Android 14: register the Bluetooth service handle (`BluetoothFrameworkInitializer`), which `app_process` processes don't get by themselves.
+
 ## [0.4.0] - 2026-11-07
 
 ### Added

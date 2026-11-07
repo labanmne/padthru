@@ -56,6 +56,8 @@ The box keeps playing its own app (live TV, for example) the whole time, and the
 
 How: Android only gives controller input to the app on screen, but the box's debug connection (adb, which you turned on to install Padthru) may read controllers directly. The app starts the helper through the box's **own** debug connection, so no computer is involved after installing. The first time, the box asks whether to allow debugging from `padthru@box`: choose **Always allow**. The helper reads the controllers' Linux input devices (sticks, buttons, motion sensors and touchpad at the controller's own rate), plays rumble through the kernel (or through Android's controller vibration API where the box's security policy doesn't allow writing to input devices), sets the light bar through Android, and learns which input the TV shows from **HDMI-CEC** (the box must have *HDMI-CEC* on, which most do). It checks every 0.7 seconds. The app re-checks every 15 minutes that the helper is running.
 
+**Auto-off, like a console.** A wireless controller doesn't turn itself off when it's connected to anything but a PlayStation, so the helper does it: when the TV goes to standby (it sees the TV's HDMI-CEC *Standby* message), or after **15 minutes** without use, it drops the controller's Bluetooth connection, and a DualShock then switches itself off. Press PS to turn it back on. Controllers on a USB cable stay on (they're charging). To change the time, put `auto_off_minutes=30` (or `0` for never) in `/data/local/tmp/padthru/settings.properties` on the box. Needs Android 13 or newer.
+
 Keep in mind:
 
 - **USB debugging has to stay on.** A firmware update from your TV operator might turn it off; open Padthru afterwards and it tells you.
