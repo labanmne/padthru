@@ -1,4 +1,4 @@
-**Padthru now runs on Linux too.** Play PC games on your Samsung TV with the controller that's already paired to the TV. The picture stays on your HDMI connection, and only the controller travels over your home network.
+**PlayStation mode.** Play PC games on your Samsung TV with the controller that's already paired to (or plugged into) the TV. A PlayStation controller now shows up on the PC as a **DualShock 4**, with PlayStation button prompts in games and Steam. The picture stays on your HDMI connection, and only the controller travels over your home network.
 
 ### Downloads
 
@@ -24,12 +24,9 @@ These files are built by GitHub Actions straight from this tag's source.
 
 The [installation guide](https://github.com/labanmne/padthru#installation) has the details, and [docs/linux.md](https://github.com/labanmne/padthru/blob/main/docs/linux.md) covers Linux.
 
-### 0.2.1
-Fixes the Linux installer: its download check failed on 0.2.0 because `SHA256SUMS.txt` had Windows line endings. If you tried 0.2.0 on Linux, just run the installer again.
+### New in 0.3.0
+- **PlayStation mode.** By default, a PlayStation controller becomes a virtual DualShock 4 and anything else an Xbox 360 controller. Change it in the tray menu (*PC sees the controller as*) or with `--pad xbox` / `--pad playstation`. Rumble works in both.
+- **Plug the controller into the TV for lower lag.** On a Q70A, a DualShock 4 on the TV's USB port reaches the PC at about 190 updates a second, against about 42 over the TV's Bluetooth. No setting needed.
+- The TV shows which controller the PC sees, and logs what your TV offers apps to the PC log (press **Yellow** to also test USB access). Motion sensors, touchpad and light bar aren't available: the TV doesn't give apps that data.
 
-### New in 0.2.0
-- **Linux PC app.** It creates a virtual Xbox 360 controller through the kernel's `uinput`, so Steam, Proton and SDL games see a wired Xbox 360 controller. Rumble from games reaches the TV. It's pure Python with no dependencies.
-- **Linux installer** with a systemd user service, Steam's udev rule (only if needed), firewall handling, and `--uninstall`.
-- **`tools/fake_tv.py`** for testing the PC side without a TV.
-
-The Linux app is tested automatically on Ubuntu with Python 3.8, 3.12 and 3.14: a simulated TV drives it, and the controller is checked at the input-device level and through SDL, the library most games use. It hasn't run on a real Linux gaming setup yet, so please report your distro with the "Works on my TV" template, even if everything just works. The TV app is unchanged apart from its version number, so 0.1.0 TV installs keep working with both PC apps.
+Update both sides: the PC app for PlayStation mode, the TV app for the new info. Older TV apps keep working with the new PC app.

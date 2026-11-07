@@ -1,9 +1,13 @@
-"""Virtual Xbox 360 controller on Linux, through the kernel's uinput module.
+"""Virtual controllers on Linux, through the kernel's uinput module.
 
 Pure Python, no compiled modules: it talks to /dev/uinput with ioctl() and
-creates a device that looks exactly like a wired Xbox 360 controller does under
-the kernel's own xpad driver (same IDs, buttons, axes and ranges). Steam, SDL
-(most native games), Proton/Wine and browsers therefore treat it as one.
+creates a device that looks exactly like a wired controller does under the
+kernel's own drivers (same IDs, buttons, axes and ranges):
+
+  "xbox"         an Xbox 360 controller, as the xpad driver shows one
+  "playstation"  a DualShock 4, as the hid-playstation / hid-sony drivers show one
+
+SDL (Steam, Proton and most native games) and browsers therefore treat it as one.
 
 Rumble works the standard Linux way: games upload FF_RUMBLE effects to the
 virtual device, and this module passes the motor strengths back to Padthru.
@@ -18,10 +22,7 @@ import time
 
 DEVICE = "/dev/uinput"
 
-# What the xpad driver reports for a wired Xbox 360 controller. Games, SDL and
-# Steam recognise the controller by these IDs (and some older games by name).
-NAME = b"Microsoft X-Box 360 pad"
-BUS_USB, VENDOR, PRODUCT, VERSION = 0x03, 0x045E, 0x028E, 0x0114
+BUS_USB = 0x03
 
 EV_SYN, EV_KEY, EV_ABS, EV_FF, EV_UINPUT = 0x00, 0x01, 0x03, 0x15, 0x0101
 SYN_REPORT = 0
@@ -29,18 +30,54 @@ UI_FF_UPLOAD, UI_FF_ERASE = 1, 2
 FF_RUMBLE, FF_GAIN = 0x50, 0x60
 FF_EFFECTS_MAX = 16
 
-KEYS = {
-    "A": 0x130, "B": 0x131, "X": 0x133, "Y": 0x134,  # BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST
-    "LB": 0x136, "RB": 0x137, "BACK": 0x13A, "START": 0x13B, "GUIDE": 0x13C,
-    "LS": 0x13D, "RS": 0x13E,
-}
+BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 0x130, 0x131, 0x133, 0x134
+BTN_TL, BTN_TR, BTN_TL2, BTN_TR2 = 0x136, 0x137, 0x138, 0x139
+BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR = 0x13A, 0x13B, 0x13C, 0x13D, 0x13E
 ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ, ABS_HAT0X, ABS_HAT0Y = 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x10, 0x11
-AXES = [  # code, minimum, maximum, fuzz, flat (xpad's values)
-    (ABS_X, -32768, 32767, 16, 128), (ABS_Y, -32768, 32767, 16, 128),
-    (ABS_RX, -32768, 32767, 16, 128), (ABS_RY, -32768, 32767, 16, 128),
-    (ABS_Z, 0, 255, 0, 0), (ABS_RZ, 0, 255, 0, 0),
-    (ABS_HAT0X, -1, 1, 0, 0), (ABS_HAT0Y, -1, 1, 0, 0),
-]
+STICK_AXES = (ABS_X, ABS_Y, ABS_RX, ABS_RY)
+
+
+class Kind:
+    """How one kind of controller looks to the system: identity, buttons and axes."""
+
+    def __init__(self, name, vendor, product, version, keys, axes, stick, trigger_keys=None):
+        self.name, self.vendor, self.product, self.version = name, vendor, product, version
+        self.keys = keys            # Padthru button name -> key code
+        self.axes = axes            # (code, minimum, maximum, fuzz, flat)
+        self.stick = stick          # -1..1 -> stick axis value
+        self.trigger_keys = trigger_keys or {}  # digital L2/R2 keys, pressed while the trigger is > 0
+
+
+KINDS = {
+    # What the xpad driver reports for a wired Xbox 360 controller. Games, SDL and
+    # Steam recognise the controller by these IDs (and some older games by name).
+    # xpad's X and Y use the BTN_X/BTN_Y codes, which are BTN_NORTH/BTN_WEST.
+    "xbox": Kind(
+        b"Microsoft X-Box 360 pad", 0x045E, 0x028E, 0x0114,
+        {"A": BTN_SOUTH, "B": BTN_EAST, "X": BTN_NORTH, "Y": BTN_WEST, "LB": BTN_TL, "RB": BTN_TR,
+         "BACK": BTN_SELECT, "TOUCHPAD": BTN_SELECT, "START": BTN_START, "GUIDE": BTN_MODE,
+         "LS": BTN_THUMBL, "RS": BTN_THUMBR},
+        [(ABS_X, -32768, 32767, 16, 128), (ABS_Y, -32768, 32767, 16, 128),
+         (ABS_RX, -32768, 32767, 16, 128), (ABS_RY, -32768, 32767, 16, 128),
+         (ABS_Z, 0, 255, 0, 0), (ABS_RZ, 0, 255, 0, 0),
+         (ABS_HAT0X, -1, 1, 0, 0), (ABS_HAT0Y, -1, 1, 0, 0)],
+        lambda v: int(round(v * 32767))),
+    # What hid-playstation (and hid-sony before it) reports for a USB DualShock 4 v2.
+    # Version 0x8111: those drivers set bit 15 to mark this button layout, and SDL's
+    # controller database matches on it. Cross/Circle/Square/Triangle are
+    # SOUTH/EAST/WEST/NORTH, L2/R2 are also buttons, sticks run 0-255 like the real pad.
+    "playstation": Kind(
+        b"Sony Interactive Entertainment Wireless Controller", 0x054C, 0x09CC, 0x8111,
+        {"A": BTN_SOUTH, "B": BTN_EAST, "X": BTN_WEST, "Y": BTN_NORTH, "LB": BTN_TL, "RB": BTN_TR,
+         "BACK": BTN_SELECT, "START": BTN_START, "GUIDE": BTN_MODE, "LS": BTN_THUMBL, "RS": BTN_THUMBR},
+        [(ABS_X, 0, 255, 0, 0), (ABS_Y, 0, 255, 0, 0), (ABS_RX, 0, 255, 0, 0), (ABS_RY, 0, 255, 0, 0),
+         (ABS_Z, 0, 255, 0, 0), (ABS_RZ, 0, 255, 0, 0),
+         (ABS_HAT0X, -1, 1, 0, 0), (ABS_HAT0Y, -1, 1, 0, 0)],
+        lambda v: int(round((v + 1.0) * 127.5)),
+        {"L2": BTN_TL2, "R2": BTN_TR2}),
+}
+# the Xbox layout under its old names, for scripts that import it
+NAME, KEYS, AXES = KINDS["xbox"].name, KINDS["xbox"].keys, KINDS["xbox"].axes
 
 
 # ------------------------------------------------------------- kernel structs
@@ -168,10 +205,11 @@ def describe():
 
 
 class VirtualPad:
-    """One virtual Xbox 360 controller."""
+    """One virtual controller: kind "xbox" (Xbox 360) or "playstation" (DualShock 4)."""
 
-    def __init__(self, on_rumble):
+    def __init__(self, on_rumble, kind="xbox"):
         self.on_rumble = on_rumble
+        self.kind = KINDS[kind]
         self.fd = os.open(DEVICE, os.O_RDWR | os.O_NONBLOCK | os.O_CLOEXEC)
         try:
             self._create()
@@ -189,17 +227,19 @@ class VirtualPad:
 
     def _create(self):
         fd = self.fd
+        kind = self.kind
         fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
-        for code in KEYS.values():
+        for code in sorted(set(kind.keys.values()) | set(kind.trigger_keys.values())):
             fcntl.ioctl(fd, UI_SET_KEYBIT, code)
         fcntl.ioctl(fd, UI_SET_EVBIT, EV_ABS)
-        for code, lo, hi, fuzz, flat in AXES:
+        for code, lo, hi, fuzz, flat in kind.axes:
+            rest = kind.stick(0.0) if code in STICK_AXES else 0
             fcntl.ioctl(fd, UI_SET_ABSBIT, code)
-            fcntl.ioctl(fd, UI_ABS_SETUP, bytes(uinput_abs_setup(code, input_absinfo(0, lo, hi, fuzz, flat, 0))))
+            fcntl.ioctl(fd, UI_ABS_SETUP, bytes(uinput_abs_setup(code, input_absinfo(rest, lo, hi, fuzz, flat, 0))))
         fcntl.ioctl(fd, UI_SET_EVBIT, EV_FF)
         fcntl.ioctl(fd, UI_SET_FFBIT, FF_RUMBLE)
         fcntl.ioctl(fd, UI_SET_FFBIT, FF_GAIN)
-        setup = uinput_setup(input_id(BUS_USB, VENDOR, PRODUCT, VERSION), NAME, FF_EFFECTS_MAX)
+        setup = uinput_setup(input_id(BUS_USB, kind.vendor, kind.product, kind.version), kind.name, FF_EFFECTS_MAX)
         fcntl.ioctl(fd, UI_DEV_SETUP, bytes(setup))
         fcntl.ioctl(fd, UI_DEV_CREATE)
 
@@ -217,18 +257,22 @@ class VirtualPad:
     def set_state(self, buttons, lt, rt, lx, ly, rx, ry):
         """buttons: set of names (A, B, ..., UP/DOWN/LEFT/RIGHT); triggers 0..1;
         sticks -1..1 with +y pointing down (the browser Gamepad API and evdev agree)."""
+        kind = self.kind
         want = {}
-        for name, code in KEYS.items():
-            want[(EV_KEY, code)] = 1 if name in buttons else 0
-        want[(EV_ABS, ABS_X)] = _stick(lx)
-        want[(EV_ABS, ABS_Y)] = _stick(ly)
-        want[(EV_ABS, ABS_RX)] = _stick(rx)
-        want[(EV_ABS, ABS_RY)] = _stick(ry)
+        for name, code in kind.keys.items():
+            want[(EV_KEY, code)] = max(want.get((EV_KEY, code), 0), 1 if name in buttons else 0)
+        if kind.trigger_keys:
+            want[(EV_KEY, kind.trigger_keys["L2"])] = 1 if lt > 0 else 0
+            want[(EV_KEY, kind.trigger_keys["R2"])] = 1 if rt > 0 else 0
+        want[(EV_ABS, ABS_X)] = kind.stick(lx)
+        want[(EV_ABS, ABS_Y)] = kind.stick(ly)
+        want[(EV_ABS, ABS_RX)] = kind.stick(rx)
+        want[(EV_ABS, ABS_RY)] = kind.stick(ry)
         want[(EV_ABS, ABS_Z)] = int(round(lt * 255))
         want[(EV_ABS, ABS_RZ)] = int(round(rt * 255))
         want[(EV_ABS, ABS_HAT0X)] = ("RIGHT" in buttons) - ("LEFT" in buttons)
         want[(EV_ABS, ABS_HAT0Y)] = ("DOWN" in buttons) - ("UP" in buttons)
-        changes = [(k, v) for k, v in want.items() if self.state.get(k, 0) != v]
+        changes = [(k, v) for k, v in want.items() if self.state.get(k) != v]
         if not changes:
             return
         data = b"".join(bytes(input_event(timeval(0, 0), t, c, v)) for (t, c), v in changes)
@@ -312,7 +356,3 @@ class VirtualPad:
         if level != self.sent:
             self.sent = level
             self.on_rumble(*level)
-
-
-def _stick(v):
-    return int(round(v * 32767))

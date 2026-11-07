@@ -21,14 +21,14 @@ One Python program with a small backend per operating system:
 | | Windows | Linux |
 |---|---|---|
 | Shipped as | `Padthru.exe` (PyInstaller, tray app) | `padthru-linux.pyz` (zipapp, systemd user service) |
-| Virtual controller | [ViGEmBus](https://github.com/nefarius/ViGEmBus) through [vgamepad](https://github.com/yannbouteiller/vgamepad) (`vpad_windows.py`) | the kernel's `uinput`, pure Python `ioctl` calls (`vpad_linux.py`) |
+| Virtual controller | [ViGEmBus](https://github.com/nefarius/ViGEmBus) through [vgamepad](https://github.com/yannbouteiller/vgamepad) (`vpad_windows.py`): an Xbox 360 or DualShock 4 target | the kernel's `uinput`, pure Python `ioctl` calls (`vpad_linux.py`): looks like the `xpad` or `hid-playstation` driver's device |
 | Rumble from games | ViGEm notification callback | `FF_RUMBLE` effects uploaded to the virtual device |
 
 What both do:
 
 - Listen on TCP **47811** (WebSocket) on all interfaces.
-- Create a virtual **Xbox 360** controller per TV controller.
-- Map the W3C *standard* gamepad layout onto Xbox buttons. **Share + Options** pressed together become the **Guide** button, since the TV keeps the PS button.
+- Create a virtual controller per TV controller. In the default *auto* mode, a Sony controller (vendor `054c` in the TV's controller ID) gets a **DualShock 4** and anything else an **Xbox 360** controller. `--pad` or the tray menu forces one; the choice is saved in `settings.json` next to the log. If the kind changes, the virtual controller is replaced.
+- Map the W3C *standard* gamepad layout onto it. **Share + Options** pressed together become the **Guide** / **PS** button, since the TV keeps the PS button. Button 17 (the DualShock touchpad click, when the TV reports it) becomes the touchpad click, or Back on an Xbox controller.
 - Release every input if the TV goes quiet for 600 ms (app closed, Wi-Fi drop), so nothing stays held down.
 - Forward rumble requests from games back to the TV.
 
@@ -36,7 +36,7 @@ What both do:
 
 JSON text messages over a WebSocket.
 
-Discovery: `GET http://<pc>:47811/padthru` returns `{"padthru": 1, "v": "0.1.0", "name": "MY-PC"}`.
+Discovery: `GET http://<pc>:47811/padthru` returns `{"padthru": 1, "v": "0.3.0", "name": "MY-PC"}`.
 
 | Direction | Message | Meaning |
 |---|---|---|

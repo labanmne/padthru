@@ -2,9 +2,10 @@
 and most native games use. Acts as the TV over the network and reads the controller with
 SDL's GameController API. Needs libSDL2 (package libsdl2-2.0-0 or SDL2).
 
-Start Padthru first, then run this as root:
+Start Padthru first (default controller type: auto), then run this as root. "playstation"
+pretends the TV has a Sony controller, so the PC should get a DualShock 4:
 
-    sudo python3 tests/linux_sdl.py dist/padthru-linux.pyz
+    sudo python3 tests/linux_sdl.py dist/padthru-linux.pyz [xbox|playstation]
 """
 import asyncio
 import ctypes
@@ -12,7 +13,21 @@ import json
 import sys
 import time
 
+if len(sys.argv) <= 2:  # no kind given: test both, each in its own run
+    import os
+    import subprocess
+    rc = 0
+    for kind in ("xbox", "playstation"):
+        print(f"=== virtual {kind} controller", flush=True)
+        rc |= subprocess.call([sys.executable, os.path.abspath(__file__), sys.argv[1], kind])
+    sys.exit(rc)
 sys.path.insert(0, sys.argv[1])
+KIND = sys.argv[2]
+TV_ID = {"xbox": "Wireless Gamepad (STANDARD GAMEPAD Vendor: 0079 Product: 18d4)",
+         "playstation": "Sony Interactive Entertainment Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 09cc)"}[KIND]
+EXPECT_TYPE = {"xbox": "Xbox 360", "playstation": "PS4"}[KIND]
+# A DualShock 4's sticks run 0-255 with 128 as centre, which SDL reads as +128 at rest.
+REST = {"xbox": 1, "playstation": 200}[KIND]
 import websockets  # noqa: E402
 
 sdl = ctypes.CDLL("libSDL2-2.0.so.0")
@@ -52,7 +67,7 @@ state = {"b": [0.0] * 17, "a": [0, 0, 0, 0]}
 
 async def sender(ws):
     while True:
-        await ws.send(json.dumps({"i": 0, "b": state["b"], "a": state["a"], "id": "SDL test", "m": "standard"}))
+        await ws.send(json.dumps({"i": 0, "b": state["b"], "a": state["a"], "id": TV_ID, "m": "standard"}))
         await asyncio.sleep(0.03)
 
 
@@ -94,7 +109,8 @@ async def run():
         ctrl = sdl.SDL_GameControllerOpen(idx)
         name = sdl.SDL_GameControllerName(ctrl).decode()
         ctype = TYPES.get(sdl.SDL_GameControllerGetType(ctrl), "?")
-        check("SDL identifies it as an Xbox 360 controller", ctype == "Xbox 360", f"name '{name}', type {ctype}")
+        check(f"SDL identifies it as a{'n' if EXPECT_TYPE[0] in 'AEIOUX' else ''} {EXPECT_TYPE} controller",
+              ctype == EXPECT_TYPE, f"name '{name}', type {ctype}")
         print("     mapping:", sdl.SDL_GameControllerMapping(ctrl).decode()[:160], "...")
 
         async def expect(label, b=None, a=None, buttons=(), axes=None):
@@ -103,7 +119,8 @@ async def run():
             got_b = {k: sdl.SDL_GameControllerGetButton(ctrl, n) for k, n in BTN.items()}
             got_a = {k: sdl.SDL_GameControllerGetAxis(ctrl, n) for k, n in AX.items()}
             ok = all(got_b[k] == (1 if k in buttons else 0) for k in BTN)
-            ok = ok and all(abs(got_a[k] - v) <= 1 for k, v in (axes or {}).items())
+            ok = ok and all(abs(got_a[k] - v) <= (REST if v == 0 and k[1] in "XY" else 1)
+                            for k, v in (axes or {}).items())
             pressed = [k for k, v in got_b.items() if v]
             check(label, ok, f"buttons {pressed}, axes {got_a}")
 

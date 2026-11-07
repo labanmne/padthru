@@ -4,14 +4,14 @@
  * Shows one of the TV's HDMI inputs full screen inside the app (tizen.tvwindow),
  * reads the controllers paired to the TV through the Gamepad API and streams
  * their state to the Padthru PC app over a WebSocket. The PC app turns that into
- * a virtual Xbox 360 controller.
+ * a virtual DualShock 4 or Xbox 360 controller.
  *
  * Remote: Red = show/hide info, Green = settings, 1-4 = HDMI input, Back = exit.
  */
 (function () {
   'use strict';
 
-  var VERSION = '0.2.1';
+  var VERSION = '0.3.0';
   var PORT = 47811;
   var POLL_MS = 4;             // how often controllers are read
   var KEEPALIVE_MS = 100;      // unchanged state is resent this often (the PC releases input after 600 ms of silence)
@@ -29,7 +29,7 @@
   var link = null;        // verified WebSocket to the PC
   var pcName = '';
   var connecting = false, scanning = false, failures = 0;
-  var pads = {}, rumble = {};
+  var pads = {}, rumble = {}, pcKind = {};
   var hudTimer = null, settingsOpen = false, editOctet = '', draftHdmi = 0;
   var logQueue = [];
 
@@ -156,6 +156,7 @@
     ws.onmessage = function (ev) {
       var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.r) rumble[m.r[0]] = [m.r[1] / 255, m.r[2] / 255];
+      if (m.k) { pcKind[m.k[0]] = m.k[1]; showPad(m.k[0]); }
     };
     ws.onerror = function () {};
     ws.onclose = function () {
@@ -259,6 +260,74 @@
   /* ---------- controllers ---------- */
   function r3(v) { return Math.round(v * 1000) / 1000; }
 
+  function showPad(idx) {
+    var p = pads[idx];
+    if (!p) return;
+    text('pad', p.name + (pcKind[idx] ? ' → PC: ' + pcKind[idx] + ' controller' : ''), 'ok');
+    showHud(4000);
+  }
+
+  // What this TV gives apps beyond buttons and sticks (motion, touchpad, raw USB/HID access).
+  // Logged to the PC so it's easy to see what a given TV model could support.
+  function describePad(gp) {
+    var extra = [];
+    try { extra.push('vibration=' + (gp.vibrationActuator ? gp.vibrationActuator.type : 'none')); } catch (e) {}
+    try { extra.push('haptics=' + (gp.hapticActuators ? gp.hapticActuators.length : 'none')); } catch (e) {}
+    try { extra.push('pose=' + (gp.pose ? 'yes' : 'none')); } catch (e) {}
+    try { extra.push('touch=' + ('touchEvents' in gp ? 'yes' : 'none')); } catch (e) {}
+    try { extra.push('hand=' + (gp.hand || 'none')); } catch (e) {}
+    return 'controller ' + gp.index + ': ' + gp.id + ' mapping=' + gp.mapping + ' buttons=' + gp.buttons.length +
+      ' axes=' + gp.axes.length + ' ' + extra.join(' ');
+  }
+
+  // Yellow: can this TV hand the raw USB controller to the app (WebUSB)? That would carry
+  // the DualShock's motion sensors, touchpad and light bar. Results go to the PC log.
+  function hex(view) {
+    var out = [];
+    for (var i = 0; i < view.byteLength; i++) out.push(('0' + view.getUint8(i).toString(16)).slice(-2));
+    return out.join(' ');
+  }
+  function usbProbe() {
+    if (!navigator.usb) { log('usb probe: this TV has no WebUSB'); return; }
+    text('pad', 'Testing USB access…', 'bad'); showHud(6000);
+    navigator.usb.getDevices().then(function (list) {
+      log('usb probe: ' + list.length + ' device(s) already allowed');
+    }, function (e) { log('usb probe: getDevices ' + e.name + ': ' + e.message); });
+    var dev;
+    var p;
+    try { p = navigator.usb.requestDevice({ filters: [{ vendorId: 0x054c }, { vendorId: 0x2dc8 }, { vendorId: 0x045e }] }); }
+    catch (e) { log('usb probe: requestDevice threw ' + e.name + ': ' + e.message); return; }
+    p.then(function (d) {
+      dev = d;
+      log('usb probe: got ' + d.manufacturerName + ' ' + d.productName + ' ' + d.vendorId.toString(16) + ':' + d.productId.toString(16));
+      return d.open();
+    }).then(function () {
+      var cfg = dev.configuration || dev.configurations[0];
+      var desc = cfg.interfaces.map(function (i) { return i.interfaceNumber + '/class ' + i.alternate.interfaceClass; }).join(', ');
+      log('usb probe: opened, interfaces ' + desc);
+      return dev.claimInterface(cfg.interfaces[0].interfaceNumber).then(function () {
+        var eps = cfg.interfaces[0].alternate.endpoints.filter(function (e) { return e.direction === 'in'; });
+        log('usb probe: claimed interface ' + cfg.interfaces[0].interfaceNumber + ', reading endpoint ' + (eps[0] && eps[0].endpointNumber));
+        return dev.transferIn(eps[0].endpointNumber, 64);
+      });
+    }).then(function (r) {
+      log('usb probe: raw report (' + r.status + '): ' + hex(r.data));
+      text('pad', 'USB access works', 'ok'); showHud(6000);
+    }).catch(function (e) {
+      log('usb probe: ' + e.name + ': ' + e.message);
+      text('pad', 'USB access blocked: ' + e.message, 'bad'); showHud(8000);
+    });
+  }
+
+  function describeTv() {
+    var caps = [];
+    caps.push('webhid=' + ('hid' in navigator ? 'yes' : 'no'));
+    caps.push('webusb=' + ('usb' in navigator ? 'yes' : 'no'));
+    caps.push('motion=' + (typeof DeviceMotionEvent !== 'undefined' ? 'api' : 'no'));
+    caps.push('ua=' + navigator.userAgent);
+    return 'TV capabilities: ' + caps.join(' ');
+  }
+
   function poll() {
     var now = Date.now();
     var list = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -274,9 +343,9 @@
       var sig = b.join(',') + '|' + a.join(',');
       var p = pads[idx];
       if (!p) {
-        p = pads[idx] = { sig: '', sent: 0 };
-        text('pad', padName(gp.id), 'ok'); showHud(4000);
-        log('controller ' + idx + ': ' + gp.id + ' mapping=' + gp.mapping + ' buttons=' + gp.buttons.length + ' axes=' + gp.axes.length);
+        p = pads[idx] = { sig: '', sent: 0, name: padName(gp.id) };
+        showPad(idx);
+        log(describePad(gp));
       }
       if (link && (sig !== p.sig || now - p.sent >= KEEPALIVE_MS)) {
         var msg = { i: idx, b: b, a: a };
@@ -292,7 +361,7 @@
     for (var k in pads) {
       if (!seen[k]) {
         send({ i: +k, gone: 1 });
-        delete pads[k];
+        delete pads[k]; delete pcKind[k];
         text('pad', 'Disconnected. Press any button to reconnect', 'bad'); showHud(5000);
       }
     }
@@ -356,6 +425,7 @@
     if (c >= 49 && c <= 52) { showPicture(c - 48); showHud(3000); }
     else if (c === 403) toggleHud();
     else if (c === 404) openSettings();
+    else if (c === 405) usbProbe();
     else if (c === 10009) { try { tizen.application.getCurrentApplication().exit(); } catch (x) {} }
   });
 
@@ -369,6 +439,7 @@
 
   showHud(0);
   showPicture(0);
+  log(describeTv());
   connect();
   setInterval(poll, POLL_MS);
 })();

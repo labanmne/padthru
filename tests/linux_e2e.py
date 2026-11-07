@@ -1,9 +1,12 @@
 """End-to-end test of the Linux PC app: act as the TV, watch the virtual controller it creates.
 
-Start Padthru first, then run this as root (it reads /dev/input/event*):
+Start Padthru first (default controller type: auto), then run this as root (it reads
+/dev/input/event*). The TV controller it pretends to have decides what the PC should get:
+"xbox" sends a generic controller (-> virtual Xbox 360 controller), "playstation" a Sony
+one (-> virtual DualShock 4).
 
     python3 dist/padthru-linux.pyz &
-    sudo python3 tests/linux_e2e.py dist/padthru-linux.pyz [port]
+    sudo python3 tests/linux_e2e.py dist/padthru-linux.pyz [port] [xbox|playstation]
 """
 import asyncio
 import ctypes
@@ -17,13 +20,27 @@ import urllib.request
 
 PYZ = sys.argv[1]
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 47811
+if len(sys.argv) <= 3:  # no kind given: test both, each in its own run
+    import subprocess
+    rc = 0
+    for kind in ("xbox", "playstation"):
+        print(f"=== virtual {kind} controller", flush=True)
+        rc |= subprocess.call([sys.executable, os.path.abspath(__file__), PYZ, str(PORT), kind])
+    sys.exit(rc)
+KIND = sys.argv[3]
 sys.path.insert(0, PYZ)
 import websockets  # noqa: E402  (from the pyz)
 import vpad_linux as V  # noqa: E402  (structs)
 
-EV_NAMES = {(1, v): k for k, v in V.KEYS.items()}
+K = V.KINDS[KIND]
+TV_ID = {"xbox": "Wireless Gamepad (STANDARD GAMEPAD Vendor: 0079 Product: 18d4)",
+         "playstation": "Sony Interactive Entertainment Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 09cc)"}[KIND]
+EV_NAMES = {(1, v): k for k, v in K.keys.items() if k != "TOUCHPAD"}
+EV_NAMES.update({(1, v): k for k, v in K.trigger_keys.items()})
 EV_NAMES.update({(3, 0): "LX", (3, 1): "LY", (3, 2): "LT", (3, 3): "RX", (3, 4): "RY", (3, 5): "RT",
                  (3, 0x10): "HATX", (3, 0x11): "HATY"})
+S = K.stick  # -1..1 -> this controller's stick value
+TRIGGER_KEYS = bool(K.trigger_keys)
 results = []
 
 
@@ -45,7 +62,7 @@ def find_event_nodes():
     text = open("/proc/bus/input/devices").read()
     nodes = []
     for block in text.strip().split("\n\n"):
-        if 'Name="Microsoft X-Box 360 pad"' in block:
+        if f'Name="{K.name.decode()}"' in block:
             m = re.search(r"H: Handlers=.*?(event\d+)", block)
             if m:
                 nodes.append("/dev/input/" + m.group(1))
@@ -56,7 +73,7 @@ def msg(b=None, a=None, i=0):
     bb = [0.0] * 17
     for k, v in (b or {}).items():
         bb[k] = v
-    return json.dumps({"i": i, "b": bb, "a": a or [0, 0, 0, 0], "id": "Wireless Controller (STANDARD GAMEPAD)", "m": "standard"})
+    return json.dumps({"i": i, "b": bb, "a": a or [0, 0, 0, 0], "id": TV_ID, "m": "standard"})
 
 
 def read_events(fd):
@@ -107,8 +124,10 @@ async def run():
         nb = bytearray(256)
         fcntl.ioctl(fd, EVIOCGNAME, nb, True)
         name = nb.split(b"\0", 1)[0].decode()
-        check("identifies as a wired Xbox 360 controller",
-              (ident.bustype, ident.vendor, ident.product) == (3, 0x045E, 0x028E) and name == "Microsoft X-Box 360 pad",
+        label = {"xbox": "a wired Xbox 360 controller", "playstation": "a USB DualShock 4"}[KIND]
+        check(f"identifies as {label}",
+              (ident.bustype, ident.vendor, ident.product, ident.version) == (3, K.vendor, K.product, K.version)
+              and name == K.name.decode(),
               f"bus {ident.bustype:#x} {ident.vendor:04x}:{ident.product:04x} v{ident.version:04x} '{name}'")
         read_events(fd)
 
@@ -119,14 +138,20 @@ async def run():
             ok = all(got.get(k) == v for k, v in expect.items())
             check(label, ok, f"got {got}")
 
-        await step("A button", {"A": 1}, b={0: 1})
+        def trig(lt, rt):
+            out = {"LT": lt, "RT": rt}
+            if TRIGGER_KEYS:  # the DualShock 4 also reports L2/R2 as buttons
+                out.update({"L2": int(lt > 0), "R2": int(rt > 0)})
+            return out
+
+        await step("A / Cross", {"A": 1}, b={0: 1})
         await step("A released", {"A": 0})
         await step("B X Y LB RB", {"B": 1, "X": 1, "Y": 1, "LB": 1, "RB": 1}, b={1: 1, 2: 1, 3: 1, 4: 1, 5: 1})
         await step("stick clicks", {"LS": 1, "RS": 1, "B": 0, "X": 0, "Y": 0, "LB": 0, "RB": 0}, b={10: 1, 11: 1})
-        await step("left stick right+up", {"LX": 32767, "LY": -32767, "LS": 0, "RS": 0}, a=[1, -1, 0, 0])
-        await step("right stick left+down", {"RX": -32767, "RY": 32767, "LX": 0, "LY": 0}, a=[0, 0, -1, 1])
-        await step("triggers (full / half)", {"LT": 255, "RT": 128, "RX": 0, "RY": 0}, b={6: 1.0, 7: 0.5})
-        await step("D-pad up+left", {"HATX": -1, "HATY": -1, "LT": 0, "RT": 0}, b={12: 1, 14: 1})
+        await step("left stick right+up", {"LX": S(1), "LY": S(-1), "LS": 0, "RS": 0}, a=[1, -1, 0, 0])
+        await step("right stick left+down", {"RX": S(-1), "RY": S(1), "LX": S(0), "LY": S(0)}, a=[0, 0, -1, 1])
+        await step("triggers (full / half)", dict(trig(255, 128), RX=S(0), RY=S(0)), b={6: 1.0, 7: 0.5})
+        await step("D-pad up+left", dict(trig(0, 0), HATX=-1, HATY=-1), b={12: 1, 14: 1})
         await step("D-pad down+right", {"HATX": 1, "HATY": 1}, b={13: 1, 15: 1})
         await step("Share = Back, Options = Start", {"BACK": 1, "HATX": 0, "HATY": 0}, b={8: 1})
         await step("Share + Options = Guide", {"GUIDE": 1, "BACK": 0}, b={8: 1, 9: 1})
@@ -135,7 +160,7 @@ async def run():
         read_events(fd)
         await asyncio.sleep(1.0)  # TV goes quiet -> watchdog releases everything
         got = read_events(fd)
-        check("inputs released when the TV goes quiet", got.get("A") == 0 and got.get("LX") == 0, f"got {got}")
+        check("inputs released when the TV goes quiet", got.get("A") == 0 and got.get("LX") == S(0), f"got {got}")
 
         # Rumble, the way a game does it: upload an FF_RUMBLE effect to the event device and play it.
         eff = V.ff_effect()

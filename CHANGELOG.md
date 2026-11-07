@@ -2,6 +2,18 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-07
+
+### Added
+- **PlayStation mode.** A PlayStation controller now shows up on the PC as a virtual **DualShock 4** (Windows: ViGEmBus DS4 target; Linux: a `uinput` device like `hid-playstation`'s), so games and Steam show PlayStation buttons. Other controllers stay Xbox 360 controllers. The tray menu (*PC sees the controller as*) or `--pad auto|xbox|playstation` changes it; the choice is saved. L2/R2 are analog plus digital, like on the real pad, and rumble works.
+- The TV shows which controller the PC sees ("→ PC: PlayStation 4 controller").
+- The TV app logs what the TV gives apps (controller buttons and axes, rumble, motion, touch, WebHID, WebUSB) to the PC log, and **Yellow** on the remote tests USB access, to help with other TV models.
+- Tested: a DualShock 4 on the TV's **USB port** reaches the PC at about 190 updates a second, against about 42 over the TV's Bluetooth.
+
+### Changed
+- The DualShock touchpad click (when the TV reports it) is now the touchpad click in PlayStation mode, and still Back on an Xbox controller.
+- The Linux tests check both controller kinds.
+
 ## [0.2.1] - 2026-11-06
 
 ### Fixed

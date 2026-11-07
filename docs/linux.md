@@ -1,6 +1,8 @@
 # Padthru on Linux
 
-The Linux PC app does the same job as `Padthru.exe`: it receives the controller from the TV app and creates a virtual **Xbox 360 controller**. It uses the kernel's `uinput` module, the same way Steam Input creates its virtual controllers, and shows up exactly like a wired Xbox 360 controller does under the kernel's own `xpad` driver. Steam, Proton/Wine, SDL-based native games and browsers treat it as one, rumble included.
+The Linux PC app does the same job as `Padthru.exe`: it receives the controller from the TV app and creates a virtual controller. It uses the kernel's `uinput` module, the same way Steam Input creates its virtual controllers. A PlayStation controller shows up exactly like a USB **DualShock 4** does under the kernel's `hid-playstation` driver, anything else like a wired **Xbox 360 controller** under `xpad`. SDL-based games, Proton/Wine and browsers treat it as one, rumble included. To force one kind, add `--pad xbox` or `--pad playstation` (as a service: `Environment=PADTHRU_ARGS=--pad playstation`, see below).
+
+The virtual DualShock 4 has no motion sensors, touchpad or light bar, because the TV doesn't pass them on. Steam Input usually reads PlayStation controllers through their raw HID interface, which a `uinput` device doesn't have, so in Steam it may show up as a generic controller; SDL games recognise it as a PS4 controller.
 
 It's a single file, `padthru-linux.pyz` (about 120 KB), with no dependencies beyond Python 3.8 or newer.
 

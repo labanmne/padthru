@@ -27,14 +27,14 @@ The controller is the problem. Bluetooth won't reach the PC through the walls, U
 
 ## The idea
 
-Your Samsung TV already talks to your controller. **Padthru** is a small TV app that shows the PC's HDMI input full screen and quietly forwards the controller to the PC over your home network. On the PC it appears as an ordinary Xbox controller.
+Your Samsung TV already talks to your controller. **Padthru** is a small TV app that shows the PC's HDMI input full screen and quietly forwards the controller to the PC over your home network. On the PC it appears as an ordinary controller: a PlayStation 4 controller if you play with a PlayStation pad, an Xbox 360 controller otherwise.
 
 ```mermaid
 flowchart LR
     PC["🖥️ Windows or Linux PC<br/>Padthru (PC app)"] -- "HDMI cable / extender<br/>native picture" --> TV["📺 Samsung TV<br/>Padthru (TV app)"]
-    Pad["🎮 Controller"] -- "Bluetooth" --> TV
+    Pad["🎮 Controller"] -- "Bluetooth or USB" --> TV
     TV -- "controller state<br/>home network" --> PC
-    PC --> X["Virtual Xbox 360 controller"] --> G["Your games"]
+    PC --> X["Virtual DualShock 4<br/>or Xbox 360 controller"] --> G["Your games"]
 ```
 
 The picture never leaves the cable. Only the controller travels over the network, and that's a few hundred bytes a second.
@@ -43,7 +43,7 @@ The picture never leaves the cable. Only the controller travels over the network
 
 - **Native picture.** The HDMI input is shown as is: 4K, HDR and high refresh rates pass straight through, with the TV's Game Mode still active.
 - **Zero setup on the network.** The TV app finds the PC by itself. You can also set the address by hand.
-- **Works with any game.** Games see a standard Xbox 360 controller (XInput), so anything that supports an Xbox controller, including Steam Input, just works. Rumble is passed back to the TV where it supports it (experimental).
+- **Works with any game.** A PlayStation controller shows up on the PC as a **DualShock 4**, so games and Steam show PlayStation buttons. Any other controller shows up as an **Xbox 360 controller** (XInput). You can switch in the tray menu. Rumble is passed back to the TV where it supports it (experimental).
 - **Up to four controllers** paired to the TV at once (tested with one so far).
 - **Windows and Linux.** On Windows it's a tray app; on Linux (SteamOS, Bazzite, Ubuntu, Fedora, Arch and others) a background service. Both use next to no CPU.
 - **Open source**, MIT licensed.
@@ -53,7 +53,7 @@ The picture never leaves the cable. Only the controller travels over the network
 | | |
 |---|---|
 | **TV** | A Samsung smart TV running Tizen that allows Developer Mode. Tested on a 2021 Q70A (Tizen 6.0). |
-| **Controller** | Any Bluetooth controller your TV accepts. Tested with a DualShock 4. |
+| **Controller** | Any controller your TV accepts, over Bluetooth or a USB cable. Tested with a DualShock 4. |
 | **PC** | Windows 10 or 11 (64-bit) with the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver, **or** Linux with Python 3.8+ ([details](docs/linux.md)). |
 | **Picture** | Your PC connected to the TV over HDMI, by any means: cable, fiber HDMI or an HDMI-over-Ethernet extender. |
 | **Network** | TV and PC on the same home network. |
@@ -98,6 +98,8 @@ Samsung TVs install apps from outside the store through **Developer Mode**. You 
 
 If it isn't paired yet: on the TV, open *Settings → Connection → Bluetooth Device List*, put the controller in pairing mode (DualShock 4: hold **Share + PS** until the light flashes) and select it.
 
+Or plug it into the TV's USB port with a data cable. That's much faster than the TV's Bluetooth (see [Performance](#performance)).
+
 ## Usage
 
 1. Turn on the controller and open **Padthru** from the TV's apps.
@@ -113,15 +115,16 @@ If the picture shows the wrong input, press **1–4** on the remote once; Padthr
 | **1 – 4** | Show HDMI input 1–4 |
 | **Red** | Show or hide the info panel |
 | **Green** | Settings: PC address and HDMI input |
+| **Yellow** | Test whether the TV lets apps reach a USB controller directly (the result goes to the PC's log) |
 | **Back** | Exit Padthru |
 
 On remotes without number or color keys, press the **123** button to bring up the on-screen keypad.
 
 ### Controller notes
 
-- **The PS / Home button belongs to the TV.** It opens the TV menu and can't be taken over by apps. For the Xbox Guide button (Steam overlay, Game Bar), press **Share + Options together**.
-- Games see an **Xbox 360 controller**, so they show Xbox button prompts.
-- The touchpad and motion sensors aren't forwarded.
+- **PlayStation or Xbox.** By default a PlayStation controller becomes a virtual **DualShock 4** on the PC and anything else an **Xbox 360 controller**. To force one, right-click the tray icon → *PC sees the controller as*, or start it with `--pad xbox` / `--pad playstation`.
+- **The PS / Home button belongs to the TV.** It opens the TV menu and can't be taken over by apps. For the PS button on the PC (or the Xbox Guide button: Steam overlay, Game Bar), press **Share + Options together**.
+- **No motion sensors, touchpad or light bar.** The TV only gives apps the buttons, sticks, triggers and rumble. Checked on a Q70A: its controller interface reports 17 buttons and 4 axes and nothing else, it has no WebHID, and its WebUSB can't be granted a device. The touchpad *click* is forwarded on TVs that report it. If you need gyro aiming, connect the controller to the PC itself.
 
 ## Performance
 
@@ -131,10 +134,11 @@ Measured on a Samsung Q70A (2021) with a DualShock 4:
 |---|---|
 | **Picture lag** | Within one frame of the TV's normal HDMI input in Game Mode, measured with photos of a millisecond timer on a mirrored laptop. It feels identical. |
 | **Picture quality** | 3840×2160 at up to 120 Hz with HDR, confirmed inside the app. |
-| **Controller** | The TV delivers about **42 updates a second** from the controller, which adds roughly **12 ms** on average compared with a controller plugged into the PC. That's the same input path Moonlight's TV app uses, without Moonlight's video delay on top. |
+| **Controller over Bluetooth** | The TV delivers about **42 updates a second** from the controller, which adds roughly **12 ms** on average compared with a controller plugged into the PC. That's the same input path Moonlight's TV app uses, without Moonlight's video delay on top. |
+| **Controller over USB** | Plugged into the TV's USB port, the PC receives about **190 updates a second** (median gap 4.3 ms), close to a controller plugged into the PC. The TV's Bluetooth is the slow part, not the app. |
 | **Network** | Under 1 ms on a wired home network; a few hundred bytes per second. |
 
-It's great for single-player and casual multiplayer. Competitive players who want every millisecond should plug the controller into the PC.
+It's great for single-player and casual multiplayer. For competitive games, plug the controller into the TV's USB port.
 
 You can repeat the picture test with [`tools/lagtest.html`](tools/lagtest.html); see [docs/latency.md](docs/latency.md).
 
@@ -184,7 +188,10 @@ They're great, but they re-encode the picture as video. If you already have an H
 The ones that carry a game controller (USB 2.0) cost $250 or more. Cheaper ones only pass a keyboard and mouse.
 
 **Does it work with Xbox or DualSense controllers?**
-Anything the TV accepts as a gamepad should work. Only the DualShock 4 has been tested so far; please report your results.
+Anything the TV accepts as a gamepad should work. A DualSense becomes a virtual DualShock 4 on the PC (Windows has no virtual DualSense). Only the DualShock 4 has been tested so far; please report your results.
+
+**Can games use the DualShock's gyro, touchpad or light bar?**
+Not through the TV, which doesn't hand that data to apps (see [Controller notes](#controller-notes)). The virtual DualShock 4 on the PC could carry it if a TV ever does.
 
 **Will it work on my TV model?**
 Probably, if it runs Tizen and has Developer Mode. Please open an issue with your model either way, so this list can grow.

@@ -34,7 +34,7 @@ This page covers Windows. On Linux, see the [Linux troubleshooting table](linux.
 
 - The info panel should show your controller's name and **Connected to <your PC>**.
 - Some games only look for controllers when they start. Connect first, then launch the game.
-- Steam: make sure *Settings → Controller → Xbox Extended Feature Support* doesn't fight with it. Padthru appears as a regular Xbox 360 controller.
+- Steam: Padthru appears as a regular DualShock 4 or Xbox 360 controller. If a game shows the wrong button prompts or doesn't react, try the other kind: right-click the tray icon → *PC sees the controller as*.
 
 ## "Padthru needs the ViGEmBus driver"
 

@@ -20,5 +20,4 @@ Please keep pull requests focused, and describe how you tested them (TV model, g
 ## Ideas that would be great to have
 
 - Support for other TV platforms (LG webOS, Android/Google TV), if they allow showing an HDMI input inside an app.
-- A DualShock 4 virtual controller mode (PlayStation prompts) as an option.
 - Packages for Linux distributions, such as an AUR package. (Flatpak is a poor fit, because Padthru needs `/dev/uinput`.)
