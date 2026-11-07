@@ -41,7 +41,7 @@ The picture never leaves the cable. Only the controller travels over the network
 
 ### Or: an Android TV box instead (any TV)
 
-**New, experimental:** an Android TV or Google TV box (Android 12+) can run Padthru's controller side instead of the Samsung TV app. The controller pairs to the box (or plugs into its USB port), the TV just shows the PC on its own HDMI input, and the PC also gets the DualShock's **gyro, touchpad and light bar**. On USB it runs at the controller's full 250 updates a second. See [docs/android.md](docs/android.md).
+**New, experimental:** an Android TV or Google TV box (Android 12+) can run Padthru's controller side instead of the Samsung TV app. The controller pairs to the box (or plugs into its USB port), the TV just shows the PC on its own HDMI input, and the PC also gets the DualShock's **gyro, touchpad and light bar**. On USB it runs at the controller's full 250 updates a second. In **background mode** the box keeps playing its own content, and the controller follows the TV's input by itself: PC input, it goes to the PC; box input, it works on the box. Get `Padthru-android.apk` from the [latest release](https://github.com/labanmne/padthru/releases/latest) and see [docs/android.md](docs/android.md).
 
 ## Features
 

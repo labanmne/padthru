@@ -43,7 +43,7 @@ The app isn't in the Play Store, so you install it once from a computer with [ad
    The box asks once whether to allow debugging from this computer: tick *Always allow* and confirm (switch the TV to the box to see it).
 3. Pair the controller with the box: *Settings → Remotes & Accessories → Add accessory*, then hold **Share + PS** on a DualShock 4 until its light flashes. Or plug it into the box's USB port.
 
-`Padthru-android.apk` is built with `tools/build_android.sh` (see [Building](#building)).
+`Padthru-android.apk` comes with each [release](https://github.com/labanmne/padthru/releases/latest), or build it yourself with `tools/build_android.sh` (see [Building](#building)).
 
 ## Use: background mode (recommended)
 

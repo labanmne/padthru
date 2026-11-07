@@ -1,32 +1,31 @@
-**PlayStation mode.** Play PC games on your Samsung TV with the controller that's already paired to (or plugged into) the TV. A PlayStation controller now shows up on the PC as a **DualShock 4**, with PlayStation button prompts in games and Steam. The picture stays on your HDMI connection, and only the controller travels over your home network.
+**Any TV, the whole DualShock, no fiddling.** An Android TV or Google TV box can now be Padthru's controller side instead of the Samsung TV app. It works with any TV, passes the DualShock's **gyro, touchpad, light bar and battery** through to the PC, and in **background mode** it follows the TV's input by itself: switch the TV to the PC and the controller goes to the PC, switch back and it works on the box, which keeps playing whatever it plays.
 
 ### Downloads
 
 | File | What it is |
 |---|---|
 | **Padthru.exe** | The Windows tray app. Needs the free [ViGEmBus](https://github.com/nefarius/ViGEmBus/releases/latest) driver. |
-| **install-linux.sh** | The Linux installer. It downloads `padthru-linux.pyz`, checks it, and sets it up as a background service. |
-| **padthru-linux.pyz** | The Linux app itself, one file, for Python 3.8 or newer. Run it with `python3 padthru-linux.pyz`. |
+| **Padthru-android.apk** | **New:** the Android TV / Google TV box app (Android 12+). Install it with `adb install`, see [docs/android.md](https://github.com/labanmne/padthru/blob/main/docs/android.md). |
 | **Padthru.wgt** | The Samsung TV app. Install it with [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung) (Windows, macOS, Linux) or Tizen Studio, which sign it for your TV. |
-| SHA256SUMS.txt | Checksums |
+| **install-linux.sh** | The Linux installer. It downloads `padthru-linux.pyz`, checks it, and sets it up as a background service. |
+| **padthru-linux.pyz** | The Linux app itself, one file, for Python 3.8 or newer. |
+| SHA256SUMS.txt | Checksums of the files built by GitHub Actions |
 
-These files are built by GitHub Actions straight from this tag's source.
+Everything except the box app is built by GitHub Actions straight from this tag's source. `Padthru-android.apk` is built from the same source with `tools/build_android.sh` and signed with the project's key, so updates install over it; its SHA-256 is `fad13479c1ce8faaafdcdff92b278109711a0ed0ca3edfe1e92944abba67bca1`.
 
 ### Setup
 
-- **Windows:** install ViGEmBus, run `Padthru.exe`.
-- **Linux:**
-  ```bash
-  curl -fsSLO https://github.com/labanmne/padthru/releases/latest/download/install-linux.sh
-  bash install-linux.sh
-  ```
-- **TV:** turn on Developer Mode, install `Padthru.wgt`, open it.
+- **PC (Windows):** install ViGEmBus, run `Padthru.exe`. **Linux:** `curl -fsSLO https://github.com/labanmne/padthru/releases/latest/download/install-linux.sh && bash install-linux.sh`
+- **Controller side, either:**
+  - **Samsung TV:** turn on Developer Mode, install `Padthru.wgt`, open it.
+  - **Android TV box:** turn on USB debugging, `adb install Padthru-android.apk`, open Padthru once and allow debugging from `padthru@box`. From then on, just switch the TV's input.
 
-The [installation guide](https://github.com/labanmne/padthru#installation) has the details, and [docs/linux.md](https://github.com/labanmne/padthru/blob/main/docs/linux.md) covers Linux.
+The [installation guide](https://github.com/labanmne/padthru#installation) has the details.
 
-### New in 0.3.0
-- **PlayStation mode.** By default, a PlayStation controller becomes a virtual DualShock 4 and anything else an Xbox 360 controller. Change it in the tray menu (*PC sees the controller as*) or with `--pad xbox` / `--pad playstation`. Rumble works in both.
-- **Plug the controller into the TV for lower lag.** On a Q70A, a DualShock 4 on the TV's USB port reaches the PC at about 190 updates a second, against about 42 over the TV's Bluetooth. No setting needed.
-- The TV shows which controller the PC sees, and logs what your TV offers apps to the PC log (press **Yellow** to also test USB access). Motion sensors, touchpad and light bar aren't available: the TV doesn't give apps that data.
+### New in 0.4.0
+- **Android TV box app** with the DualShock's motion sensors, touchpad (fingers and click), light bar and battery on the PC's virtual DualShock 4 (Windows). Measured on a Skyworth HY44G: a DualShock 4 on the box's USB port at its full 250 updates a second, about 44 over Bluetooth.
+- **Background mode:** no app on screen; the controller follows the TV's input over HDMI-CEC, and the helper starts again by itself after reboots and app updates (tested through a reboot that also updated the box from Android 12 to 14).
+- Tested on one box with a DualShock 4 so far. Please report your box and controller.
 
-Update both sides: the PC app for PlayStation mode, the TV app for the new info. Older TV apps keep working with the new PC app.
+### Earlier: 0.3.0
+PlayStation mode: a PlayStation controller shows up on the PC as a DualShock 4 (tray menu or `--pad` to change), and a controller on the Samsung TV's USB port reaches the PC at about 190 updates a second.

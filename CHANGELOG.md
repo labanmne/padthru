@@ -2,12 +2,15 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-07
 
 ### Added
 - **Android TV box app** (`android/`, [docs/android.md](docs/android.md)). An Android 12+ TV box can be the controller side instead of the Samsung TV app, so any TV works and the TV shows the PC on its own HDMI input. Controllers pair to the box over Bluetooth or plug into its USB port. Android exposes more than Samsung TVs do, and Padthru now passes it on to the virtual DualShock 4 on Windows: **gyro and accelerometer, touchpad (fingers and click), battery**, and a game's **light bar** color back to the controller. Measured on a Skyworth HY44G: a USB DualShock 4 at its full 250 updates a second (about 320 new states a second at the PC with motion), Bluetooth at about 44.
 - **Background mode for the box app.** A helper with the rights of the box's debug connection reads controllers in the background and follows the TV's input over HDMI-CEC: while the TV shows another input (the PC), it grabs the controllers and sends them to the PC; when the TV shows the box, the controllers work on the box. The box keeps playing whatever it plays. The app starts the helper itself through the box's own debug connection (one-time approval), after reboots and updates too.
-- `tools/build_android.sh` builds the APK with the Android SDK's own tools, no Gradle.
+- `tools/build_android.sh` builds the APK with the Android SDK's own tools, no Gradle. Releases include `Padthru-android.apk`.
+
+### Changed
+- The PC app accepts the box app (`padthru-android`) next to the TV app, fills the virtual DualShock 4's extended report (motion, touchpad, battery) on Windows, and sends a game's light bar color back (`{"l": [...]}`). The Linux PC app takes buttons and sticks from the box app for now.
 
 ## [0.3.0] - 2026-11-07
 
