@@ -108,6 +108,9 @@ public class MainActivity extends Activity {
     private View root;
     private volatile boolean sending = true;
     private Thread sender;
+    /** The background helper (Helper.java) handles the controllers when it runs; this screen then only shows its status. */
+    private volatile boolean helperRunning;
+    private volatile String helperStatus = "";
 
     // ---------------------------------------------------------------- life cycle
 
@@ -131,7 +134,19 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             hello = "{\"hello\":{\"app\":\"padthru-android\",\"v\":\"" + VERSION + "\"}}";
         }
-        link = new PcLink(getSharedPreferences("padthru", MODE_PRIVATE), hello, new PcLink.Listener() {
+        android.content.SharedPreferences prefs = getSharedPreferences("padthru", MODE_PRIVATE);
+        PcLink.Store store = new PcLink.Store() {
+            @Override
+            public String get() {
+                return prefs.getString("host", "");
+            }
+
+            @Override
+            public void set(String host) {
+                prefs.edit().putString("host", host).apply();
+            }
+        };
+        link = new PcLink(store, hello, new PcLink.Listener() {
             @Override
             public void onStatus(String text, boolean connected) {
                 ui.post(() -> {
@@ -160,6 +175,10 @@ public class MainActivity extends Activity {
         link.start();
         sender = new Thread(this::sendLoop, "padthru-send");
         sender.start();
+        Starter.schedule(this); // start the background helper (and keep it running)
+        Thread watch = new Thread(this::watchHelper, "padthru-helper-watch");
+        watch.setDaemon(true);
+        watch.start();
         ui.post(this::refreshUi);
     }
 
@@ -237,6 +256,7 @@ public class MainActivity extends Activity {
     }
 
     private void addDevice(int deviceId) {
+        if (helperRunning) return;
         InputDevice d = InputDevice.getDevice(deviceId);
         if (!isGamepad(d)) return;
         Pad p;
@@ -651,6 +671,58 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Checks once a second whether the background helper runs (it answers on 127.0.0.1:47812). */
+    private void watchHelper() {
+        while (sending) {
+            String line = null;
+            try (java.net.Socket s = new java.net.Socket()) {
+                s.connect(new java.net.InetSocketAddress("127.0.0.1", Helper.STATUS_PORT), 300);
+                s.setSoTimeout(1000);
+                line = new java.io.BufferedReader(new java.io.InputStreamReader(s.getInputStream())).readLine();
+            } catch (Exception ignored) {
+            }
+            boolean running = line != null;
+            if (running) {
+                StringBuilder sb = new StringBuilder("Background mode is on: controllers go to the PC whenever the TV shows another input, ");
+                sb.append("and work on this box while the TV shows the box. You can close this screen.\n");
+                try {
+                    JSONObject j = new JSONObject(line);
+                    sb.append("PC: ").append(j.optString("pc")).append("   ·   TV shows: ")
+                            .append(j.optString("tv").equals("box") ? "this box" : j.optString("tv").equals("other") ? "another input" : "unknown").append('\n');
+                    JSONArray pads = j.optJSONArray("pads");
+                    for (int i = 0; pads != null && i < pads.length(); i++) {
+                        JSONObject p = pads.getJSONObject(i);
+                        sb.append("Player ").append(p.optInt("player")).append(": ").append(p.optString("name"))
+                                .append(p.optBoolean("usb") ? " (USB)" : "");
+                        if (!p.optString("pc").isEmpty()) sb.append("  →  PC: ").append(p.optString("pc"));
+                        if (p.optBoolean("motion")) sb.append(" · motion");
+                        if (p.optBoolean("touchpad")) sb.append(" · touchpad");
+                        if (p.optInt("battery", -1) >= 0) sb.append(" · battery ").append(p.optInt("battery")).append('%');
+                        sb.append('\n');
+                    }
+                } catch (Exception ignored) {
+                }
+                helperStatus = sb.toString().trim();
+            }
+            if (running && !helperRunning) {
+                helperRunning = true;
+                synchronized (lock) {
+                    for (int i = pads.size() - 1; i >= 0; i--) removePad(pads.valueAt(i));
+                }
+            } else if (!running && helperRunning) {
+                helperRunning = false;
+                ui.post(() -> {
+                    for (int id : inputManager.getInputDeviceIds()) addDevice(id);
+                });
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                return;
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- screen
 
     private TextView label(float sp, int color, boolean bold) {
@@ -708,7 +780,17 @@ public class MainActivity extends Activity {
             }
         }
         if (sb.length() == 0) sb.append("No controller yet. Pair one in the box's Bluetooth settings or plug it into USB, then press a button.");
-        padText.setText(sb.toString().trim());
+        if (!helperRunning) {
+            String r = Starter.lastResult;
+            sb.append("\n\nBackground mode: ").append(r.isEmpty()
+                    ? "starting… If the box asks whether to allow debugging, choose \"Always allow\"." : r);
+        }
+        padText.setText(helperRunning ? helperStatus : sb.toString().trim());
+        hintText.setText(helperRunning
+                ? "Nothing to do here: just switch the TV's input. Back on the box remote closes this screen.   Padthru " + VERSION
+                : "Leave Padthru open and switch the TV to your PC's HDMI input.\n"
+                + "Controllers connected to this box (Bluetooth or USB) go to the PC.\n"
+                + "Back on the box remote closes Padthru.   Padthru " + VERSION);
         if (now / 1000 % 30 == 0) {
             synchronized (lock) {
                 for (int i = 0; i < pads.size(); i++) readBattery(pads.valueAt(i));

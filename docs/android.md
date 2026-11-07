@@ -45,13 +45,33 @@ The app isn't in the Play Store, so you install it once from a computer with [ad
 
 `Padthru-android.apk` is built with `tools/build_android.sh` (see [Building](#building)).
 
-## Use
+## Use: background mode (recommended)
+
+Open **Padthru** on the box once. It starts its **background helper**, and from then on there's nothing to do: just switch the TV's input.
+
+- **TV on the PC's input** (or anything other than the box): the helper takes the controllers and sends them to the PC. The box ignores them meanwhile, so nothing happens to whatever the box is playing.
+- **TV on the box:** the helper lets go, and the controllers work on the box as usual.
+
+The box keeps playing its own app (live TV, for example) the whole time, and the helper starts again by itself after a reboot or an update of the app.
+
+How: Android only gives controller input to the app on screen, but the box's debug connection (adb, which you turned on to install Padthru) may read controllers directly. The app starts the helper through the box's **own** debug connection, so no computer is involved after installing. The first time, the box asks whether to allow debugging from `padthru@box`: choose **Always allow**. The helper reads the controllers' Linux input devices (sticks, buttons, motion sensors and touchpad at the controller's own rate), plays rumble through the kernel, sets the light bar through Android, and learns which input the TV shows from **HDMI-CEC** (the box must have *HDMI-CEC* on, which most do). It checks every 0.7 seconds. The app re-checks every 15 minutes that the helper is running.
+
+Keep in mind:
+
+- **USB debugging has to stay on.** A firmware update from your TV operator might turn it off; open Padthru afterwards and it tells you.
+- **Don't let the box sleep** while you want to play (it has to be awake to read the controller). Many boxes stay on when the TV switches to another input; check *Settings → Device Preferences → Power* or similar.
+- The helper's log is `/data/local/tmp/padthru/helper.log` on the box, and it also writes its main events to the PC's Padthru log.
+- To start it from a computer instead: `adb shell "$(cat android/start-helper.sh)"`. To stop it: `adb shell pkill -f padthru.Helper`, or turn USB debugging off.
+
+## Use: on screen (without background mode)
+
+If the box's debug connection is off, the app forwards controllers itself while it's open:
 
 1. Make sure Padthru is running on the PC.
 2. Open **Padthru** on the box. It finds the PC by itself and shows the connected controllers, their update rate, and what the PC sees them as.
 3. Leave it open and switch the TV to the PC's HDMI input.
 
-Android only gives controller input to the app on screen, so Padthru has to stay open on the box. The box's screen isn't visible while the TV shows the PC, so that's not a problem. Padthru keeps the box from going to sleep while it's open, and the box remote still works (Back closes Padthru). The controller's buttons never act on the box while Padthru is open.
+Padthru then has to stay open on the box, which keeps the box awake. The box remote still works (Back closes Padthru), and the controller's buttons never act on the box while Padthru is open.
 
 If a controller is connected both by cable and Bluetooth, Linux on the box uses the Bluetooth connection. To switch to USB, turn the controller off (hold PS for ten seconds), plug it in, and press PS.
 
@@ -61,9 +81,9 @@ If a controller is connected both by cable and Bluetooth, Linux on the box uses 
 ANDROID_HOME=~/Android/Sdk bash tools/build_android.sh
 ```
 
-It needs a JDK (17 works) and the Android SDK with a platform and build-tools, and uses only the SDK's own tools (`aapt2`, `javac`, `d8`, `zipalign`, `apksigner`), with no Gradle and no libraries. The first build creates a signing key in `~/.config/padthru/`. Keep it: Android only installs an update over an existing install if it's signed with the same key.
+It needs a JDK (17 works) and the Android SDK with a platform, build-tools and the NDK, and uses only the SDK's own tools (`aapt2`, `javac`, `d8`, the NDK's `clang`, `zipalign`, `apksigner`), with no Gradle and no libraries. The first build creates a signing key in `~/.config/padthru/`. Keep it: Android only installs an update over an existing install if it's signed with the same key.
 
-The app is two files in `android/src`: `MainActivity.java` (controllers, sensors, light bar, rumble, screen) and `PcLink.java` (finding the PC and a small WebSocket client).
+The app lives in `android/`: `MainActivity.java` (the screen, and on-screen forwarding through Android's input APIs), `Helper.java` (the background helper, started with `app_process`), `Evdev.java` with `jni/padthru_evdev.c` (reading, grabbing and rumbling Linux input devices, built for 32- and 64-bit ARM with the NDK), `LocalAdb.java` (a minimal adb client for the box's own debug connection), `Starter.java` (starts the helper after boot and updates, and checks it every 15 minutes) and `PcLink.java` (finding the PC and a small WebSocket client).
 
 ## Protocol additions
 

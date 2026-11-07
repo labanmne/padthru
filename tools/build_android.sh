@@ -32,10 +32,23 @@ javac -nowarn -Xlint:-options -source 8 -target 8 -encoding UTF-8 -bootclasspath
   -d "$WORK/classes" $(find "$SRC/src" -name '*.java')
 "$BT/d8" --release --min-api 31 --lib "$JAR" --output "$WORK" $(find "$WORK/classes" -name '*.class')
 
-python3 - "$WORK/base.apk" "$WORK/classes.dex" <<'EOF'
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1], "a", zipfile.ZIP_DEFLATED) as z:
-    z.write(sys.argv[2], "classes.dex")
+# The background helper's evdev layer (android/jni), for 32- and 64-bit ARM boxes
+NDK=$(ls -d "$SDK"/ndk/*/ 2>/dev/null | sort -V | tail -1)
+CLANG_DIR="${NDK}toolchains/llvm/prebuilt/linux-x86_64/bin"
+for target in "armeabi-v7a armv7a-linux-androideabi31" "arm64-v8a aarch64-linux-android31"; do
+  set -- $target
+  mkdir -p "$WORK/lib/$1"
+  "$CLANG_DIR/$2-clang" -shared -fPIC -O2 -Wall -Wl,-z,max-page-size=16384 \
+    -o "$WORK/lib/$1/libpadthru.so" "$SRC/jni/padthru_evdev.c"
+done
+
+python3 - "$WORK" <<'EOF'
+import os, sys, zipfile
+work = sys.argv[1]
+with zipfile.ZipFile(os.path.join(work, "base.apk"), "a") as z:
+    z.write(os.path.join(work, "classes.dex"), "classes.dex", zipfile.ZIP_DEFLATED)
+    for abi in sorted(os.listdir(os.path.join(work, "lib"))):
+        z.write(os.path.join(work, "lib", abi, "libpadthru.so"), f"lib/{abi}/libpadthru.so", zipfile.ZIP_STORED)
 EOF
 "$BT/zipalign" -f -p 4 "$WORK/base.apk" "$WORK/aligned.apk"
 

@@ -1,6 +1,5 @@
 package io.github.labanmne.padthru;
 
-import android.content.SharedPreferences;
 import android.util.Base64;
 
 import org.json.JSONObject;
@@ -36,6 +35,13 @@ import java.util.concurrent.TimeUnit;
  * has no dependencies.
  */
 final class PcLink {
+    /** Where the PC's address is remembered (app settings, or a file for the helper). */
+    interface Store {
+        String get();
+
+        void set(String host);
+    }
+
     interface Listener {
         void onStatus(String text, boolean connected);
         void onConnected();
@@ -45,7 +51,7 @@ final class PcLink {
     static final int PORT = 47811;
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final SharedPreferences prefs;
+    private final Store store;
     private final Listener listener;
     private final String hello;
     private final Object writeLock = new Object();
@@ -56,8 +62,8 @@ final class PcLink {
     volatile String pcName = "";
     volatile String host = "";
 
-    PcLink(SharedPreferences prefs, String hello, Listener listener) {
-        this.prefs = prefs;
+    PcLink(Store store, String hello, Listener listener) {
+        this.store = store;
         this.hello = hello;
         this.listener = listener;
     }
@@ -79,13 +85,13 @@ final class PcLink {
 
     /** Forget the saved PC and search again. */
     void rescan() {
-        prefs.edit().remove("host").apply();
+        store.set("");
         closeQuietly();
     }
 
     private void loop() {
         while (running) {
-            String target = prefs.getString("host", "");
+            String target = store.get();
             try {
                 if (target.isEmpty() || !ping(target, 1500)) {
                     listener.onStatus("Looking for your PC…", false);
@@ -96,7 +102,7 @@ final class PcLink {
                     sleep(5000);
                     continue;
                 }
-                prefs.edit().putString("host", target).apply();
+                store.set(target);
                 host = target;
                 session(target);
             } catch (Exception e) {
