@@ -776,7 +776,7 @@ public final class Helper {
         } catch (Throwable t) {
             if (!rumbleFailed) {
                 rumbleFailed = true;
-                report("rumble not available: " + t);
+                report("rumble not available: " + (t.getCause() != null ? t.getCause() : t));
             }
         }
     }
@@ -797,8 +797,13 @@ public final class Helper {
 
     /** The Android input device for one of our controllers. */
     private static InputDevice androidDevice(Pad p) throws Exception {
-        Class<?> imc = Class.forName("android.hardware.input.InputManager");
-        Object im = imc.getMethod("getInstance").invoke(null);
+        Object im;
+        try { // Android 14 moved the process-wide input manager to InputManagerGlobal
+            im = Class.forName("android.hardware.input.InputManagerGlobal").getMethod("getInstance").invoke(null);
+        } catch (ClassNotFoundException e) {
+            im = Class.forName("android.hardware.input.InputManager").getMethod("getInstance").invoke(null);
+        }
+        Class<?> imc = im.getClass();
         int[] ids = (int[]) imc.getMethod("getInputDeviceIds").invoke(im);
         for (int id : ids) {
             InputDevice d = (InputDevice) imc.getMethod("getInputDevice", int.class).invoke(im, id);
@@ -818,21 +823,15 @@ public final class Helper {
     private void light(Pad p, int color) {
         try {
             if (p.lights == null) {
-                Class<?> imc = Class.forName("android.hardware.input.InputManager");
-                Object im = imc.getMethod("getInstance").invoke(null);
-                int[] ids = (int[]) imc.getMethod("getInputDeviceIds").invoke(im);
-                for (int id : ids) {
-                    InputDevice d = (InputDevice) imc.getMethod("getInputDevice", int.class).invoke(im, id);
-                    if (d == null || d.isVirtual() || d.getVendorId() != p.vendor || d.getProductId() != p.product) continue;
-                    LightsManager lm = d.getLightsManager();
-                    for (Light l : lm.getLights()) {
-                        if (l.hasRgbControl()) {
-                            p.rgb = l;
-                            p.lights = lm.openSession();
-                            break;
-                        }
+                InputDevice d = androidDevice(p);
+                if (d == null) return;
+                LightsManager lm = d.getLightsManager();
+                for (Light l : lm.getLights()) {
+                    if (l.hasRgbControl()) {
+                        p.rgb = l;
+                        p.lights = lm.openSession();
+                        break;
                     }
-                    if (p.lights != null) break;
                 }
             }
             if (p.lights != null && p.rgb != null) {
@@ -842,7 +841,7 @@ public final class Helper {
         } catch (Throwable t) {
             if (!lightFailed) {
                 lightFailed = true;
-                report("light bar not available: " + t);
+                report("light bar not available: " + (t.getCause() != null ? t.getCause() : t));
             }
         }
     }
