@@ -15,7 +15,7 @@ final class Evdev {
     static final int INPUT_PROP_ACCELEROMETER = 6;
     static final int ENODEV = 19;
 
-    static native int open(String path);
+    static native int open(String path, boolean write);
     static native void close(int fd);
     static native int grab(int fd, boolean on);
     static native String name(int fd);

@@ -94,6 +94,9 @@ public final class Helper {
         int sent, rate;
         String pcKind = "";
         int rumbleId = -1;
+        int ffFd = -1;              // a writable handle for kernel rumble, where the box allows one
+        int rumbleLarge, rumbleSmall;
+        android.os.VibratorManager vibrators;
         LightsManager.LightsSession lights;
         Light rgb;
 
@@ -252,6 +255,7 @@ public final class Helper {
         thread("padthru-status", this::statusServer);
         thread("padthru-cec", this::cecLoop);
         thread("padthru-scan", this::scanLoop);
+        thread("padthru-rumble", this::rumbleRefreshLoop);
         log("Padthru helper " + MainActivity.VERSION + " started");
         sendLoop();
     }
@@ -362,7 +366,7 @@ public final class Helper {
     }
 
     private void probe(String path) {
-        int fd = Evdev.open(path);
+        int fd = Evdev.open(path, false);
         if (fd < 0) return;
         boolean gamepad = Evdev.hasCode(fd, Evdev.EV_KEY, Evdev.BTN_SOUTH) && Evdev.hasCode(fd, Evdev.EV_ABS, Evdev.ABS_X);
         boolean motion = Evdev.hasProp(fd, Evdev.INPUT_PROP_ACCELEROMETER);
@@ -396,6 +400,9 @@ public final class Helper {
                 p.sony = ids[1] == 0x054c;
                 p.analogTriggers = Evdev.hasCode(fd, Evdev.EV_ABS, Evdev.ABS_Z) && Evdev.hasCode(fd, Evdev.EV_ABS, Evdev.ABS_RZ);
                 p.tvId = String.format(Locale.US, "%s (STANDARD GAMEPAD Vendor: %04x Product: %04x)", name, ids[1], ids[2]);
+                if (p.ffFd >= 0) Evdev.close(p.ffFd);
+                p.ffFd = Evdev.hasCode(fd, Evdev.EV_FF, Evdev.FF_RUMBLE) ? Evdev.open(path, true) : -1;
+                p.rumbleId = -1;
                 if (p.idx < 0) {
                     p.idx = freeIndex();
                 }
@@ -449,6 +456,9 @@ public final class Helper {
             Pad p = n.pad;
             if (p.gamepad == n) {
                 p.gamepad = null;
+                if (p.ffFd >= 0) Evdev.close(p.ffFd);
+                p.ffFd = -1;
+                p.vibrators = null;
                 if (p.idx >= 0) gone = "{\"i\":" + p.idx + ",\"gone\":1}";
                 p.idx = -1;
                 if (p.lights != null) {
@@ -699,18 +709,28 @@ public final class Helper {
     private void fromPc(JSONObject m) {
         JSONArray a;
         if ((a = m.optJSONArray("r")) != null) {
+            Pad p;
             synchronized (lock) {
-                Pad p = padByIdx(a.optInt(0, -1));
+                p = padByIdx(a.optInt(0, -1));
                 if (p == null) return;
-                int strong = a.optInt(1) * 257, weak = a.optInt(2) * 257;
-                if (strong == 0 && weak == 0) {
-                    if (p.rumbleId >= 0) Evdev.stopRumble(p.gamepad.fd, p.rumbleId);
-                } else {
-                    int id = Evdev.rumble(p.gamepad.fd, p.rumbleId, strong, weak);
-                    if (id >= 0) p.rumbleId = id;
-                    else if (p.rumbleId >= 0) p.rumbleId = Evdev.rumble(p.gamepad.fd, -1, strong, weak);
+                p.rumbleLarge = a.optInt(1);
+                p.rumbleSmall = a.optInt(2);
+                if (p.ffFd >= 0) {
+                    int strong = p.rumbleLarge * 257, weak = p.rumbleSmall * 257;
+                    if (strong == 0 && weak == 0) {
+                        if (p.rumbleId >= 0) Evdev.stopRumble(p.ffFd, p.rumbleId);
+                        return;
+                    }
+                    int id = Evdev.rumble(p.ffFd, p.rumbleId, strong, weak);
+                    if (id >= 0) {
+                        p.rumbleId = id;
+                        return;
+                    }
+                    Evdev.close(p.ffFd); // the box won't let us; use Android's vibration API instead
+                    p.ffFd = -1;
                 }
             }
+            androidRumble(p);
         } else if ((a = m.optJSONArray("l")) != null) {
             Pad p;
             synchronized (lock) {
@@ -723,6 +743,73 @@ public final class Helper {
                 if (p != null) p.pcKind = a.optString(1);
             }
         }
+    }
+
+    private boolean rumbleFailed;
+
+    /** Rumble through Android's controller vibration API (boxes that don't allow kernel rumble). */
+    private void androidRumble(Pad p) {
+        try {
+            if (p.vibrators == null) {
+                InputDevice d = androidDevice(p);
+                if (d == null) return;
+                p.vibrators = d.getVibratorManager();
+            }
+            if (p.rumbleLarge == 0 && p.rumbleSmall == 0) {
+                p.vibrators.cancel();
+                return;
+            }
+            int[] ids = p.vibrators.getVibratorIds();
+            android.os.CombinedVibration.ParallelCombination c = android.os.CombinedVibration.startParallel();
+            int[] amp = {p.rumbleLarge, p.rumbleSmall};
+            boolean any = false;
+            for (int i = 0; i < Math.min(2, ids.length); i++) {
+                if (amp[i] > 0) {
+                    c.addVibrator(ids[i], android.os.VibrationEffect.createOneShot(2000, Math.min(255, amp[i])));
+                    any = true;
+                }
+            }
+            if (!any && ids.length > 0) {
+                c.addVibrator(ids[0], android.os.VibrationEffect.createOneShot(2000, Math.min(255, Math.max(amp[0], amp[1]))));
+            }
+            p.vibrators.vibrate(c.combine());
+        } catch (Throwable t) {
+            if (!rumbleFailed) {
+                rumbleFailed = true;
+                report("rumble not available: " + t);
+            }
+        }
+    }
+
+    /** Keeps Android-API rumble going while a game holds it (each request lasts 2 s). */
+    private void rumbleRefreshLoop() {
+        while (true) {
+            sleep(1000);
+            List<Pad> active = new ArrayList<>();
+            synchronized (lock) {
+                for (Pad p : groups.values()) {
+                    if (p.gamepad != null && p.ffFd < 0 && p.vibrators != null && (p.rumbleLarge > 0 || p.rumbleSmall > 0)) active.add(p);
+                }
+            }
+            for (Pad p : active) androidRumble(p);
+        }
+    }
+
+    /** The Android input device for one of our controllers. */
+    private static InputDevice androidDevice(Pad p) throws Exception {
+        Class<?> imc = Class.forName("android.hardware.input.InputManager");
+        Object im = imc.getMethod("getInstance").invoke(null);
+        int[] ids = (int[]) imc.getMethod("getInputDeviceIds").invoke(im);
+        for (int id : ids) {
+            InputDevice d = (InputDevice) imc.getMethod("getInputDevice", int.class).invoke(im, id);
+            if (d != null && !d.isVirtual() && d.getVendorId() == p.vendor && d.getProductId() == p.product
+                    && (d.getSources() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD) return d;
+        }
+        for (int id : ids) { // a DualShock's merged device may not list gamepad first
+            InputDevice d = (InputDevice) imc.getMethod("getInputDevice", int.class).invoke(im, id);
+            if (d != null && !d.isVirtual() && d.getVendorId() == p.vendor && d.getProductId() == p.product) return d;
+        }
+        return null;
     }
 
     private boolean lightFailed;

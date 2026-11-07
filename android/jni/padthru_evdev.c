@@ -16,10 +16,11 @@
 #define LONG_BITS (8 * sizeof(unsigned long))
 #define NLONGS(n) (((n) + LONG_BITS - 1) / LONG_BITS)
 
-JNIEXPORT jint JNICALL FN(open)(JNIEnv *env, jclass cls, jstring path) {
+/* Read-only is enough for reading and grabbing; writing (rumble) is a separate open, because
+ * some boxes' SELinux policy lets adb shell read input devices but not write to them. */
+JNIEXPORT jint JNICALL FN(open)(JNIEnv *env, jclass cls, jstring path, jboolean write) {
     const char *p = (*env)->GetStringUTFChars(env, path, NULL);
-    int fd = open(p, O_RDWR | O_CLOEXEC);
-    if (fd < 0) fd = open(p, O_RDONLY | O_CLOEXEC);
+    int fd = open(p, (write ? O_RDWR : O_RDONLY) | O_CLOEXEC);
     int err = errno;
     (*env)->ReleaseStringUTFChars(env, path, p);
     return fd < 0 ? -err : fd;

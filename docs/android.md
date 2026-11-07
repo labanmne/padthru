@@ -17,7 +17,7 @@ Why you might prefer it:
 - **More of the DualShock.** Android 12 gives apps the **gyro and accelerometer**, the **touchpad**, the **light bar** and the **battery level**, and Padthru passes them on to the virtual DualShock 4 on the PC (Windows). Games and Steam can use gyro aiming and the touchpad, and a game's light bar color shows on the controller.
 - **USB at full speed.** A DualShock 4 on the box's USB port reaches the PC at its full 250 updates a second.
 
-> **New and experimental.** Tested on one box (a Skyworth HY44G operator box, Android TV 12) with a DualShock 4. The motion, touchpad and light bar data needs Padthru 0.4 on a Windows PC; the Linux PC app takes the buttons and sticks for now.
+> **New and experimental.** Tested on one box (a Skyworth HY44G operator box, Android TV 12, and Android TV 14 after the operator updated it) with a DualShock 4. Background mode came back by itself after a reboot that installed that update. The motion, touchpad and light bar data needs Padthru 0.4 on a Windows PC; the Linux PC app takes the buttons and sticks for now.
 
 ## Measured (Skyworth HY44G, DualShock 4)
 
@@ -54,7 +54,7 @@ Open **Padthru** on the box once. It starts its **background helper**, and from 
 
 The box keeps playing its own app (live TV, for example) the whole time, and the helper starts again by itself after a reboot or an update of the app.
 
-How: Android only gives controller input to the app on screen, but the box's debug connection (adb, which you turned on to install Padthru) may read controllers directly. The app starts the helper through the box's **own** debug connection, so no computer is involved after installing. The first time, the box asks whether to allow debugging from `padthru@box`: choose **Always allow**. The helper reads the controllers' Linux input devices (sticks, buttons, motion sensors and touchpad at the controller's own rate), plays rumble through the kernel, sets the light bar through Android, and learns which input the TV shows from **HDMI-CEC** (the box must have *HDMI-CEC* on, which most do). It checks every 0.7 seconds. The app re-checks every 15 minutes that the helper is running.
+How: Android only gives controller input to the app on screen, but the box's debug connection (adb, which you turned on to install Padthru) may read controllers directly. The app starts the helper through the box's **own** debug connection, so no computer is involved after installing. The first time, the box asks whether to allow debugging from `padthru@box`: choose **Always allow**. The helper reads the controllers' Linux input devices (sticks, buttons, motion sensors and touchpad at the controller's own rate), plays rumble through the kernel (or through Android's controller vibration API where the box's security policy doesn't allow writing to input devices), sets the light bar through Android, and learns which input the TV shows from **HDMI-CEC** (the box must have *HDMI-CEC* on, which most do). It checks every 0.7 seconds. The app re-checks every 15 minutes that the helper is running.
 
 Keep in mind:
 
