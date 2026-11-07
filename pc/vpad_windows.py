@@ -37,10 +37,21 @@ def _byte(v):
     return int(round((v + 1.0) * 127.5))
 
 
+def _int16(v):
+    return max(-32768, min(32767, int(round(v))))
+
+
+# A DualShock 4 reports angular velocity at about 16.4 counts per degree/s (+-2000 deg/s
+# over 16 bits) and acceleration at 8192 counts per g; ViGEmBus hands games matching
+# calibration data, so they scale the values back the same way they do for a real pad.
+GYRO_PER_DEG_S = 16.4
+ACCEL_PER_G = 8192.0
+
+
 class VirtualPad:
     """One virtual controller: kind "xbox" (Xbox 360) or "playstation" (DualShock 4)."""
 
-    def __init__(self, on_rumble, kind="xbox"):
+    def __init__(self, on_rumble, kind="xbox", on_light=None):
         self.kind = kind
         if kind == "playstation":
             b, s = vg.DS4_BUTTONS, vg.DS4_SPECIAL_BUTTONS
@@ -65,6 +76,8 @@ class VirtualPad:
 
             def notification(client, target, large_motor, small_motor, lightbar_color, user_data):
                 on_rumble(large_motor, small_motor)
+                if on_light is not None:
+                    on_light(lightbar_color.Red, lightbar_color.Green, lightbar_color.Blue)
         else:
             b = vg.XUSB_BUTTON
             self.buttons = {
@@ -85,12 +98,20 @@ class VirtualPad:
     def name(self):
         return "ViGEm DS4" if self.kind == "playstation" else "ViGEm X360"
 
-    def set_state(self, buttons, lt, rt, lx, ly, rx, ry):
+    def set_state(self, buttons, lt, rt, lx, ly, rx, ry, extra=None):
         """buttons: set of names; triggers 0..1; sticks -1..1 with +y pointing down
-        (browser Gamepad API convention, same as the DualShock 4; XInput's +y points up)."""
+        (browser Gamepad API convention, same as the DualShock 4; XInput's +y points up).
+        extra (DualShock 4 only, from controller apps that have it): gyro [deg/s x3],
+        accel [g x3], touch [two (x, y) 0..1 or None], battery (0-100), usb (bool)."""
         pad = self.pad
-        pad.reset()
         if self.kind == "playstation":
+            # only the basic report; the extended one keeps touch tracking and motion between updates
+            pad.report = pad.get_default_report()
+            if extra:
+                self._extra(extra)
+            elif pad._use_extended_report:  # released (app went quiet): stop motion, lift fingers
+                pad.gyroscope(0, 0, 0)
+                pad.touchpad(None, None)
             for name in buttons:
                 if name in self.buttons:
                     pad.press_button(button=self.buttons[name])
@@ -108,6 +129,7 @@ class VirtualPad:
             pad.left_joystick(x_value=_byte(lx), y_value=_byte(ly))
             pad.right_joystick(x_value=_byte(rx), y_value=_byte(ry))
         else:
+            pad.reset()
             for name in buttons:
                 pad.press_button(button=self.buttons["BACK" if name == "TOUCHPAD" else name])
             pad.left_trigger_float(value_float=lt)
@@ -115,6 +137,24 @@ class VirtualPad:
             pad.left_joystick_float(x_value_float=lx, y_value_float=-ly)
             pad.right_joystick_float(x_value_float=rx, y_value_float=-ry)
         pad.update()
+
+    def _extra(self, extra):
+        pad = self.pad
+        g = extra.get("gyro")
+        if g:
+            pad.gyroscope(*(_int16(v * GYRO_PER_DEG_S) for v in g))
+        a = extra.get("accel")
+        if a:
+            pad.accelerometer(*(_int16(v * ACCEL_PER_G) for v in a))
+        if "touch" in extra:
+            pad.touchpad(*(None if f is None else (int(round(f[0] * 1919)), int(round(f[1] * 941)))
+                           for f in extra["touch"]))
+        if "usb" in extra:
+            pad.usb(extra["usb"])
+        if "battery" in extra:
+            pct = extra["battery"]
+            plugged = extra.get("usb", True)
+            pad.battery(11 if plugged and pct >= 100 else min(10, pct // 10))
 
     def close(self):
         """Release everything and unplug the virtual controller."""

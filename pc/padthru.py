@@ -55,6 +55,8 @@ PAD_MODES = {
     "playstation": "PlayStation 4 controller (DualShock 4)",
 }
 KIND_NAMES = {"xbox": "Xbox 360", "playstation": "PlayStation 4"}
+# apps that send controllers: the Samsung TV app and the Android TV box app
+CONTROLLER_APPS = {"padthru-tv": "TV", "padthru-android": "Android TV box"}
 
 log = logging.getLogger("padthru")
 
@@ -214,6 +216,27 @@ BUTTONS = {
 }
 
 
+def parse_extra(msg):
+    """Motion, touchpad and battery, sent by controller apps that can read them (the Android
+    box app): "g" gyro [deg/s x3], "ac" accel [g x3], "t" up to two fingers [x, y] 0..1 or
+    null, "bat" battery percent, "usb" cable connected."""
+    extra = {}
+    for key, name, limit in (("g", "gyro", 2000.0), ("ac", "accel", 4.0)):
+        v = msg.get(key)
+        if isinstance(v, list) and len(v) == 3:
+            extra[name] = [clamp(x, -limit, limit) for x in v]
+    t = msg.get("t")
+    if isinstance(t, list):
+        fingers = [(clamp(f[0], 0, 1), clamp(f[1], 0, 1)) if isinstance(f, list) and len(f) >= 2 else None
+                   for f in t[:2]]
+        extra["touch"] = fingers + [None] * (2 - len(fingers))
+    if isinstance(msg.get("bat"), (int, float)) and not isinstance(msg.get("bat"), bool):
+        extra["battery"] = int(clamp(msg["bat"], 0, 100))
+    if isinstance(msg.get("usb"), bool):
+        extra["usb"] = msg["usb"]
+    return extra or None
+
+
 class Pad:
     """One TV controller, mirrored by one virtual controller (Xbox 360 or DualShock 4)."""
 
@@ -227,6 +250,7 @@ class Pad:
         self.tv_id = ""
         self.device = None
         self.kind = None
+        self.light = None  # last light bar color a game set (DualShock 4)
 
     def ensure_device(self):
         """Create the virtual controller, or replace it when the wanted kind changed.
@@ -237,31 +261,40 @@ class Pad:
         if self.device is not None:
             self.close()
             log.info("virtual controller %d: switching to %s", self.idx, KIND_NAMES[kind])
-        self.device = self.bridge.backend.VirtualPad(self._rumble, kind)
+        self.light = None
+        self.device = self.bridge.backend.VirtualPad(self._rumble, kind, on_light=self._light)
         self.kind = kind
         self.active = False
         log.info("virtual controller %d created: %s (%s)", self.idx, KIND_NAMES[kind], self.device.name())
         self.tell_tv()
 
-    def tell_tv(self):
-        """Let the TV show which controller the PC sees."""
-        if self.ws is not None and self.kind and self.bridge.loop is not None:
-            msg = json.dumps({"k": [self.idx, KIND_NAMES[self.kind]]})
-            try:
-                asyncio.run_coroutine_threadsafe(self.ws.send(msg), self.bridge.loop)
-            except Exception:  # noqa: BLE001
-                pass
-
-    def _rumble(self, large_motor, small_motor):
-        """Called by the backend, from any thread, when a game changes the rumble (0-255 each)."""
+    def _send(self, obj):
+        """Send to the TV/box app that owns this controller (any thread)."""
         ws, loop = self.ws, self.bridge.loop
         if ws is None or loop is None:
             return
-        msg = json.dumps({"r": [self.idx, int(large_motor), int(small_motor)]})
         try:
-            asyncio.run_coroutine_threadsafe(ws.send(msg), loop)
+            asyncio.run_coroutine_threadsafe(ws.send(json.dumps(obj)), loop)
         except Exception:  # noqa: BLE001
             pass
+
+    def tell_tv(self):
+        """Let the TV show which controller the PC sees (and restore a game's light bar color)."""
+        if self.kind:
+            self._send({"k": [self.idx, KIND_NAMES[self.kind]]})
+        if self.light is not None:
+            self._send({"l": [self.idx] + list(self.light)})
+
+    def _rumble(self, large_motor, small_motor):
+        """Called by the backend, from any thread, when a game changes the rumble (0-255 each)."""
+        self._send({"r": [self.idx, int(large_motor), int(small_motor)]})
+
+    def _light(self, red, green, blue):
+        """Called by the backend when a game sets the DualShock 4 light bar color."""
+        light = (int(red) & 0xFF, int(green) & 0xFF, int(blue) & 0xFF)
+        if light != self.light:
+            self.light = light
+            self._send({"l": [self.idx] + list(light)})
 
     def close(self):
         device, self.device, self.kind, self.active = self.device, None, None, False
@@ -271,7 +304,7 @@ class Pad:
             except Exception:  # noqa: BLE001
                 pass
 
-    def apply(self, b, a):
+    def apply(self, b, a, extra=None):
         down = {i for i in BUTTONS if i < len(b) and clamp(b[i], 0, 1) > 0.5}
         # Samsung TVs keep the PS/Home button for their own menu, so Share + Options = Guide.
         if 8 in down and 9 in down:
@@ -283,6 +316,7 @@ class Pad:
             clamp(b[6], 0, 1) if len(b) > 6 else 0.0,
             clamp(b[7], 0, 1) if len(b) > 7 else 0.0,
             clamp(ax[0]), clamp(ax[1]), clamp(ax[2]), clamp(ax[3]),
+            extra,
         )
         self.last = time.monotonic()
         self.active = True
@@ -367,10 +401,12 @@ class Bridge:
                 if "hello" in msg:
                     await ws.send(json.dumps({"padthru": 1, "v": VERSION, "name": socket.gethostname()}))
                     hello = msg.get("hello") or {}
-                    if isinstance(hello, dict) and hello.get("app") == "padthru-tv" and not verified:
+                    if isinstance(hello, dict) and hello.get("app") in CONTROLLER_APPS and not verified:
                         verified = True
                         self.tvs[ws] = peer
-                        log.info("TV connected from %s (TV app %s)", peer, hello.get("v"))
+                        log.info("%s connected from %s (%s %s%s)", CONTROLLER_APPS[hello["app"]], peer,
+                                 hello["app"], hello.get("v"), f", {hello['ua']}" if hello.get("ua") and
+                                 hello["app"] != "padthru-tv" else "")
                         self.on_change()
                     continue
                 if not verified:
@@ -411,7 +447,7 @@ class Bridge:
                     if state != pad.debug_state:
                         pad.debug_state = state
                         log.info("controller %d buttons=%s sticks=%s", idx, state[0], state[1])
-                pad.apply(b, a)
+                pad.apply(b, a, parse_extra(msg))
         except websockets.ConnectionClosed:
             pass
         finally:

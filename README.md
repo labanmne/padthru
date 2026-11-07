@@ -39,6 +39,10 @@ flowchart LR
 
 The picture never leaves the cable. Only the controller travels over the network, and that's a few hundred bytes a second.
 
+### Or: an Android TV box instead (any TV)
+
+**New, experimental:** an Android TV or Google TV box (Android 12+) can run Padthru's controller side instead of the Samsung TV app. The controller pairs to the box (or plugs into its USB port), the TV just shows the PC on its own HDMI input, and the PC also gets the DualShock's **gyro, touchpad and light bar**. On USB it runs at the controller's full 250 updates a second. See [docs/android.md](docs/android.md).
+
 ## Features
 
 - **Native picture.** The HDMI input is shown as is: 4K, HDR and high refresh rates pass straight through, with the TV's Game Mode still active.

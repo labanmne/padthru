@@ -207,7 +207,7 @@ def describe():
 class VirtualPad:
     """One virtual controller: kind "xbox" (Xbox 360) or "playstation" (DualShock 4)."""
 
-    def __init__(self, on_rumble, kind="xbox"):
+    def __init__(self, on_rumble, kind="xbox", on_light=None):
         self.on_rumble = on_rumble
         self.kind = KINDS[kind]
         self.fd = os.open(DEVICE, os.O_RDWR | os.O_NONBLOCK | os.O_CLOEXEC)
@@ -254,9 +254,10 @@ class VirtualPad:
 
     # --- input
 
-    def set_state(self, buttons, lt, rt, lx, ly, rx, ry):
+    def set_state(self, buttons, lt, rt, lx, ly, rx, ry, extra=None):
         """buttons: set of names (A, B, ..., UP/DOWN/LEFT/RIGHT); triggers 0..1;
-        sticks -1..1 with +y pointing down (the browser Gamepad API and evdev agree)."""
+        sticks -1..1 with +y pointing down (the browser Gamepad API and evdev agree).
+        extra (motion, touchpad, battery) isn't passed on by the Linux backend yet."""
         kind = self.kind
         want = {}
         for name, code in kind.keys.items():

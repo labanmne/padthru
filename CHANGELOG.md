@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Android TV box app** (`android/`, [docs/android.md](docs/android.md)). An Android 12+ TV box can be the controller side instead of the Samsung TV app, so any TV works and the TV shows the PC on its own HDMI input. Controllers pair to the box over Bluetooth or plug into its USB port. Android exposes more than Samsung TVs do, and Padthru now passes it on to the virtual DualShock 4 on Windows: **gyro and accelerometer, touchpad (fingers and click), battery**, and a game's **light bar** color back to the controller. Measured on a Skyworth HY44G: a USB DualShock 4 at its full 250 updates a second (about 320 new states a second at the PC with motion), Bluetooth at about 44.
+- `tools/build_android.sh` builds the APK with the Android SDK's own tools, no Gradle.
+
 ## [0.3.0] - 2026-11-07
 
 ### Added
