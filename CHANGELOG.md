@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-08
 
 ### Added
 - **Step aside for a controller plugged into the PC.** While a controller is connected to the PC itself (USB or Bluetooth), the PC app unplugs its virtual controllers and ignores the TV and box, so games see only the real controller instead of two (one of them idle). It checks every 2 seconds; when the controller is gone, the TV's next input brings the virtual controller back. Virtual controllers from other programs (Steam, DS4Windows, ViGEm) don't count. On by default; tray menu *Step aside when a controller is plugged into this PC* or `--step-aside on|off`, saved in settings.json. Windows (SetupAPI) and Linux (sysfs/udev).
@@ -67,6 +67,10 @@ First public release.
 - **Share + Options as Guide.** Together they act as the Xbox Guide button, because the TV keeps the PS button for itself.
 - **Rumble forwarding** from games to the TV (experimental).
 
+[0.5.0]: https://github.com/labanmne/padthru/releases/tag/v0.5.0
+[0.4.1]: https://github.com/labanmne/padthru/releases/tag/v0.4.1
+[0.4.0]: https://github.com/labanmne/padthru/releases/tag/v0.4.0
+[0.3.0]: https://github.com/labanmne/padthru/releases/tag/v0.3.0
 [0.2.1]: https://github.com/labanmne/padthru/releases/tag/v0.2.1
 [0.2.0]: https://github.com/labanmne/padthru/releases/tag/v0.2.0
 [0.1.0]: https://github.com/labanmne/padthru/releases/tag/v0.1.0
