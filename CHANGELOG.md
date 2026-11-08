@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Step aside for a controller plugged into the PC.** While a controller is connected to the PC itself (USB or Bluetooth), the PC app unplugs its virtual controllers and ignores the TV and box, so games see only the real controller instead of two (one of them idle). It checks every 2 seconds; when the controller is gone, the TV's next input brings the virtual controller back. Virtual controllers from other programs (Steam, DS4Windows, ViGEm) don't count. On by default; tray menu *Step aside when a controller is plugged into this PC* or `--step-aside on|off`, saved in settings.json. Windows (SetupAPI) and Linux (sysfs/udev).
+- `tests/step_aside.py`: the pause logic end to end with a fake TV, Linux detection on a fake `/sys` tree, Windows detection next to a ViGEm DualShock 4.
+
 ## [0.4.1] - 2026-11-07
 
 ### Added

@@ -48,6 +48,104 @@ GYRO_PER_DEG_S = 16.4
 ACCEL_PER_G = 8192.0
 
 
+# ---------------------------------------------------------------- controllers plugged into this PC
+
+_GAME_IDS = ("HID_DEVICE_SYSTEM_GAME", "UP:0001_U:0004", "UP:0001_U:0005", "UP:0001_U:0008")
+_win = None
+
+
+def _windows_api():
+    """setupapi/cfgmgr32 through ctypes, set up once."""
+    global _win
+    if _win is None:
+        import ctypes
+        from ctypes import wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD),
+                        ("Data4", ctypes.c_ubyte * 8)]
+
+        class DEVPROPKEY(ctypes.Structure):
+            _fields_ = [("fmtid", GUID), ("pid", wintypes.ULONG)]
+
+        class SP_DEVINFO_DATA(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("ClassGuid", GUID), ("DevInst", wintypes.DWORD),
+                        ("Reserved", ctypes.c_void_p)]
+
+        setupapi = ctypes.WinDLL("setupapi", use_last_error=True)
+        cfgmgr = ctypes.WinDLL("cfgmgr32")
+        setupapi.SetupDiGetClassDevsW.restype = ctypes.c_void_p
+        setupapi.SetupDiGetClassDevsW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD]
+        setupapi.SetupDiEnumDeviceInfo.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(SP_DEVINFO_DATA)]
+        setupapi.SetupDiGetDeviceRegistryPropertyW.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(SP_DEVINFO_DATA), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+            ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+        setupapi.SetupDiDestroyDeviceInfoList.argtypes = [ctypes.c_void_p]
+        # DEVPKEY_Device_BusReportedDeviceDesc: the name the device itself reports ("Wireless Controller")
+        bus_desc = DEVPROPKEY(GUID(0x540B947E, 0x8B40, 0x45BC, (ctypes.c_ubyte * 8)(0xA8, 0xA2, 0x6A, 0x0B,
+                                                                                    0x89, 0x4C, 0xBD, 0xA2)), 4)
+        _win = (ctypes, wintypes, setupapi, cfgmgr, SP_DEVINFO_DATA, bus_desc)
+    return _win
+
+
+def real_controllers():
+    """Names of game controllers plugged into this PC itself (USB or Bluetooth).
+
+    Virtual controllers don't count: walking up from the controller, ours and every
+    other one (Steam, DS4Windows, ...) reach a software bus (ROOT\\..., SWD\\...) first,
+    real ones the PC's hardware (a USB port or the Bluetooth radio, then PCI\\ / ACPI\\)."""
+    ctypes, wintypes, setupapi, cfgmgr, SP_DEVINFO_DATA, bus_desc = _windows_api()
+
+    def device_id(inst):
+        buf = ctypes.create_unicode_buffer(512)
+        return buf.value if cfgmgr.CM_Get_Device_IDW(inst, buf, 512, 0) == 0 else ""
+
+    def parent(inst):
+        p = wintypes.DWORD()
+        return p.value if cfgmgr.CM_Get_Parent(ctypes.byref(p), inst, 0) == 0 else None
+
+    def reported_name(inst):
+        kind, size = wintypes.ULONG(), wintypes.ULONG(512)
+        buf = ctypes.create_string_buffer(512)
+        if cfgmgr.CM_Get_DevNode_PropertyW(inst, ctypes.byref(bus_desc), ctypes.byref(kind), buf,
+                                           ctypes.byref(size), 0) != 0:
+            return ""
+        return ctypes.wstring_at(buf).strip()
+
+    found = []
+    devs = setupapi.SetupDiGetClassDevsW(None, "HID", None, 0x2 | 0x4)  # DIGCF_PRESENT | DIGCF_ALLCLASSES
+    if not devs or devs == ctypes.c_void_p(-1).value:
+        return found
+    try:
+        i = 0
+        while True:
+            data = SP_DEVINFO_DATA()
+            data.cbSize = ctypes.sizeof(SP_DEVINFO_DATA)
+            if not setupapi.SetupDiEnumDeviceInfo(devs, i, ctypes.byref(data)):
+                break
+            i += 1
+            size = wintypes.DWORD()
+            buf = ctypes.create_unicode_buffer(2048)
+            if not setupapi.SetupDiGetDeviceRegistryPropertyW(devs, ctypes.byref(data), 1, None, buf,  # HARDWAREID
+                                                              ctypes.sizeof(buf), ctypes.byref(size)):
+                continue
+            ids = ctypes.wstring_at(ctypes.addressof(buf), size.value // 2).upper()
+            if not any(g in ids for g in _GAME_IDS):
+                continue
+            chain, inst = [], data.DevInst
+            while inst is not None and len(chain) < 16:
+                chain.append((inst, device_id(inst).upper()))
+                inst = parent(inst)
+            bus = next((dev for _, dev in chain[1:] if dev.startswith(("ROOT\\", "SWD\\", "PCI\\", "ACPI\\"))), "")
+            if not bus.startswith(("PCI\\", "ACPI\\")):
+                continue  # a virtual controller
+            name = next((n for n in (reported_name(x) for x, _ in chain[:4]) if n), "") or "a controller"
+            found.append(name)
+    finally:
+        setupapi.SetupDiDestroyDeviceInfoList(devs)
+    return sorted(set(found))
+
+
 class VirtualPad:
     """One virtual controller: kind "xbox" (Xbox 360) or "playstation" (DualShock 4)."""
 

@@ -204,6 +204,60 @@ def describe():
     return "uinput (%s)" % DEVICE
 
 
+BTN_JOYSTICK, BTN_GAMEPAD = 0x120, 0x130
+
+
+def _has_key(bitmap, code, word_bits=None):
+    """True if a sysfs capability bitmap ("capabilities/key": hex words, most
+    significant first, one per C long) has the bit for this key code."""
+    words = bitmap.split()
+    bits = word_bits or ctypes.sizeof(ctypes.c_long) * 8
+    idx = len(words) - 1 - code // bits
+    if idx < 0:
+        return False
+    try:
+        return bool(int(words[idx], 16) >> (code % bits) & 1)
+    except ValueError:
+        return False
+
+
+def _read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def real_controllers(sys_root="/sys", udev_root="/run/udev/data"):
+    """Names of game controllers plugged into this PC itself (USB or Bluetooth).
+
+    Virtual input devices (ours, Steam's and other uinput devices) live under
+    /sys/devices/virtual and don't count. A device is a controller when udev says
+    so (ID_INPUT_JOYSTICK), or, without udev, when it has gamepad or joystick buttons."""
+    found = []
+    base = os.path.join(sys_root, "class", "input")
+    try:
+        entries = sorted(os.listdir(base))
+    except OSError:
+        return found
+    for entry in entries:
+        if not entry.startswith("event"):
+            continue
+        node = os.path.join(base, entry)
+        if "/devices/virtual/" in os.path.realpath(node).replace(os.sep, "/"):
+            continue
+        udev = os.path.join(udev_root, "c" + _read(os.path.join(node, "dev")))
+        if os.path.exists(udev):
+            joystick = "E:ID_INPUT_JOYSTICK=1" in _read(udev).splitlines()
+        else:
+            keys = _read(os.path.join(node, "device", "capabilities", "key"))
+            joystick = _has_key(keys, BTN_GAMEPAD) or _has_key(keys, BTN_JOYSTICK)
+        if joystick:
+            found.append(_read(os.path.join(node, "device", "name")) or "a controller")
+    return sorted(set(found))
+
+
 class VirtualPad:
     """One virtual controller: kind "xbox" (Xbox 360) or "playstation" (DualShock 4)."""
 

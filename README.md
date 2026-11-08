@@ -127,6 +127,7 @@ On remotes without number or color keys, press the **123** button to bring up th
 ### Controller notes
 
 - **PlayStation or Xbox.** By default a PlayStation controller becomes a virtual **DualShock 4** on the PC and anything else an **Xbox 360 controller**. To force one, right-click the tray icon → *PC sees the controller as*, or start it with `--pad xbox` / `--pad playstation`.
+- **A controller plugged into the PC takes over.** While a controller is connected to the PC itself (USB or Bluetooth), Padthru unplugs its virtual controller and ignores the TV, so games see only that one instead of two. Unplug it and the TV's controller works again from its next button press. To turn this off: tray menu → *Step aside when a controller is plugged into this PC*, or `--step-aside off`.
 - **The PS / Home button belongs to the TV.** It opens the TV menu and can't be taken over by apps. For the PS button on the PC (or the Xbox Guide button: Steam overlay, Game Bar), press **Share + Options together**.
 - **No motion sensors, touchpad or light bar.** The TV only gives apps the buttons, sticks, triggers and rumble. Checked on a Q70A: its controller interface reports 17 buttons and 4 axes and nothing else, it has no WebHID, and its WebUSB can't be granted a device. The touchpad *click* is forwarded on TVs that report it. If you need gyro aiming, connect the controller to the PC itself.
 

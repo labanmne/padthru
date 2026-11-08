@@ -9,6 +9,8 @@ DualShock 4, anything else a virtual Xbox 360 controller (changeable).
 
     Padthru.exe / padthru            start (Windows: tray icon; Linux: runs in the foreground)
     --pad auto|xbox|playstation      which controller the PC sees (default: auto, saved from the tray)
+    --step-aside on|off              while a controller is plugged into this PC itself, unplug the
+                                     virtual ones and ignore the TV (default: on, saved from the tray)
     --console                        Windows: no tray, log to the console
     --debug                          also log every button and stick change
 """
@@ -31,6 +33,7 @@ VERSION = "0.4.1"
 PORT = 47811
 REPO_URL = "https://github.com/labanmne/padthru"
 STALE_AFTER = 0.6  # seconds without a packet from the TV -> release all inputs
+DESK_CHECK_EVERY = 2.0  # seconds between looks for a controller plugged into this PC
 
 IS_WINDOWS = sys.platform == "win32"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -330,7 +333,7 @@ class Pad:
 # ---------------------------------------------------------------- network bridge
 
 class Bridge:
-    def __init__(self, backend, port, debug, pad_mode="auto"):
+    def __init__(self, backend, port, debug, pad_mode="auto", step_aside=True):
         self.backend = backend
         self.port = port
         self.debug = debug
@@ -342,9 +345,18 @@ class Bridge:
         self.on_change = lambda: None
         self.seen_ids = set()
         self.pad_error_at = 0.0
+        # Step aside: while a controller is plugged into this PC itself, the virtual
+        # controllers are unplugged and the TV's input is ignored, so games see only
+        # the real one. desk_pads holds the names of those controllers.
+        self.step_aside = step_aside
+        self.desk_pads = []
+        self.desk_error_at = 0.0
 
     # status for the tray
     def status_text(self):
+        if self.desk_pads:
+            return (f"Paused: {', '.join(self.desk_pads)} {'are' if len(self.desk_pads) > 1 else 'is'} "
+                    "plugged into this PC")
         if not self.tvs:
             return "Waiting for the TV app"
         live = [p for p in self.pads.values() if p.ws is not None]
@@ -385,6 +397,53 @@ class Bridge:
 
         if self.loop is not None:
             self.loop.call_soon_threadsafe(apply)
+
+    def set_step_aside(self, on):
+        """Turn stepping aside for controllers plugged into this PC on or off (any thread)."""
+        self.step_aside = bool(on)
+        log.info("step aside when a controller is plugged into this PC: %s", "on" if on else "off")
+        if self.loop is not None and not on:
+            self.loop.call_soon_threadsafe(self.set_desk_pads, [])
+
+    def set_desk_pads(self, names):
+        """Record which controllers are plugged into this PC (event loop thread). When the
+        first one appears, the virtual controllers are unplugged; the TV's next input
+        creates them again once the last one is gone."""
+        names = sorted(set(names))
+        if names == self.desk_pads:
+            return
+        before, self.desk_pads = self.desk_pads, names
+        if names and not before:
+            log.info("%s plugged into this PC: virtual controllers unplugged, TV input ignored until it's gone",
+                     ", ".join(names))
+            for p in self.pads.values():
+                p.close()
+        elif not names:
+            log.info("%s: the TV's controllers work again", "no controller plugged into this PC any more"
+                     if self.step_aside else "stepping aside turned off")
+        self.on_change()
+
+    async def desk_watch(self):
+        """Look for controllers plugged into this PC every few seconds."""
+        find = getattr(self.backend, "real_controllers", None)
+        if find is None:
+            return
+        while not self.stop_event.is_set():
+            names = []
+            if self.step_aside:
+                try:
+                    names = await self.loop.run_in_executor(None, find)
+                except Exception as e:  # noqa: BLE001
+                    now = time.monotonic()
+                    if now - self.desk_error_at > 300:
+                        self.desk_error_at = now
+                        log.error("cannot look for controllers plugged into this PC: %s", e)
+            if self.step_aside:  # it may have been switched off while looking
+                self.set_desk_pads(names)
+            try:
+                await asyncio.wait_for(self.stop_event.wait(), DESK_CHECK_EVERY)
+            except asyncio.TimeoutError:
+                pass
 
     async def handler(self, ws):
         import websockets
@@ -432,6 +491,8 @@ class Bridge:
                     if (idx, pad.tv_id) not in self.seen_ids:
                         self.seen_ids.add((idx, pad.tv_id))
                         log.info("controller %d: %s (mapping %s)", idx, pad.tv_id, msg.get("m"))
+                if self.desk_pads:
+                    continue  # a controller is plugged into this PC: stay out of its way
                 if not self.ready(pad):
                     continue
                 if pad.ws is not ws:
@@ -497,7 +558,9 @@ class Bridge:
         log.info("%s %s listening on port %d (%s, controller type: %s), addresses: %s", APP, VERSION,
                  self.port, self.backend.describe(), self.pad_mode, ", ".join(local_addresses()) or "unknown")
         started["event"].set()
+        desk = asyncio.ensure_future(self.desk_watch())
         await self.watchdog()
+        desk.cancel()
         server.close()
         await server.wait_closed()
         for p in self.pads.values():
@@ -539,11 +602,18 @@ def run_tray(bridge):
             bridge.set_pad_mode(mode)
         return pystray.MenuItem(PAD_MODES[mode], choose, checked=lambda item: bridge.pad_mode == mode, radio=True)
 
+    def toggle_step_aside(icon, item):
+        on = not bridge.step_aside
+        save_settings(step_aside=on)
+        bridge.set_step_aside(on)
+
     menu = pystray.Menu(
         pystray.MenuItem(lambda item: bridge.status_text(), None, enabled=False),
         pystray.MenuItem(lambda item: "This PC: " + (", ".join(local_addresses()[:2]) or "unknown"), None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("PC sees the controller as", pystray.Menu(*(mode_item(m) for m in PAD_MODES))),
+        pystray.MenuItem("Step aside when a controller is plugged into this PC", toggle_step_aside,
+                         checked=lambda item: bridge.step_aside),
         pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda item: autostart_enabled()),
         pystray.MenuItem("Open log", open_log),
         pystray.MenuItem("Help and updates", lambda icon, item: webbrowser.open(REPO_URL)),
@@ -588,15 +658,20 @@ def main():
     ap.add_argument("--pad", choices=list(PAD_MODES),
                     help="which controller the PC sees: auto (default: PlayStation controllers become a "
                          "DualShock 4, others an Xbox 360 controller), xbox or playstation")
+    ap.add_argument("--step-aside", choices=["on", "off"],
+                    help="while a controller is plugged into this PC itself, unplug the virtual controllers "
+                         "and ignore the TV, so games see only that one (default: on)")
     ap.add_argument("--port", type=int, default=PORT, help=f"TCP port (default {PORT}; the TV app expects {PORT})")
     ap.add_argument("--version", action="version", version=f"{APP} {VERSION}")
     args = ap.parse_args()
     console = args.console or not IS_WINDOWS  # no tray on Linux: it runs as a service or in a terminal
 
     setup_logging(console=console)
-    pad_mode = args.pad or load_settings().get("pad")
+    settings = load_settings()
+    pad_mode = args.pad or settings.get("pad")
     if pad_mode not in PAD_MODES:
         pad_mode = "auto"
+    step_aside = args.step_aside == "on" if args.step_aside else settings.get("step_aside", True) is not False
 
     try:
         backend = load_backend()
@@ -608,7 +683,7 @@ def main():
                 webbrowser.open(getattr(e, "help_url", REPO_URL))
         return 1
 
-    bridge = Bridge(backend, args.port, args.debug, pad_mode)
+    bridge = Bridge(backend, args.port, args.debug, pad_mode, step_aside)
     started = {"event": threading.Event(), "error": None}
     thread = threading.Thread(target=lambda: asyncio.run(bridge.main(started)), name="bridge", daemon=True)
     thread.start()
